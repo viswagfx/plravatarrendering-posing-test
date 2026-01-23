@@ -174,13 +174,16 @@ async function renderAvatarFromZip(zipBlob) {
   object.position.y += (object.position.y - center.y);
   object.position.z += (object.position.z - center.z);
 
+  // Rotate 180 deg around Y
+  object.rotation.y = Math.PI;
+
   // Camera
   const maxDim = Math.max(size.x, size.y, size.z);
   const fov = 45;
   const camera = new THREE.PerspectiveCamera(fov, 1, 0.1, 1000);
   const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov * Math.PI / 360));
 
-  camera.position.set(0, size.y * 0.1, cameraZ * 1.5); // Slightly elevated and zoomed out
+  camera.position.set(0, size.y * 0.1, cameraZ * 2.0); // Moved back (was 1.5)
   camera.lookAt(0, 0, 0);
 
   // 7. Render
@@ -246,9 +249,12 @@ async function renderAvatarFromZip(zipBlob) {
 
     object2.position.sub(center2); // Standard centering
 
+    // Rotate 180 deg
+    object2.rotation.y = Math.PI;
+
     const maxDim2 = Math.max(size2.x, size2.y, size2.z);
     const cameraZ2 = Math.abs(maxDim2 / 2 / Math.tan(fov * Math.PI / 360));
-    camera.position.set(0, size2.y * 0.1, cameraZ2 * 1.5);
+    camera.position.set(0, size2.y * 0.1, cameraZ2 * 2.0);
     camera.lookAt(0, 0, 0);
 
     scene.add(object2);
