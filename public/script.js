@@ -3,6 +3,12 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 
 // ======================
+// Missing Variable Declarations
+// ======================
+let isSelectionMode = false;
+const selectedOutfits = new Set();
+
+// ======================
 // Elements
 // ======================
 const statusCurrent = document.getElementById("statusCurrent");
@@ -88,7 +94,7 @@ closeOutfitRender.onclick = () => {
 };
 
 // ======================
-// Renderer Logic
+// Renderer Logic (TRANSPARENCY FIXED)
 // ======================
 async function renderAvatarFromZip(zipBlob) {
   // 1. Unzip
@@ -105,7 +111,7 @@ async function renderAvatarFromZip(zipBlob) {
     else if (lower.endsWith(".mtl")) mtlFile = file;
     else if (lower.endsWith(".json")) metaFile = file;
     else if (lower.endsWith(".png") || lower.endsWith(".jpg")) {
-      textures[path] = file; // path matches filename in MTL usually
+      textures[path] = file;
     }
   }
 
@@ -124,24 +130,16 @@ async function renderAvatarFromZip(zipBlob) {
   const objString = await objFile.async("string");
 
   // 3. Patch MTL to use Blob URLs
-  // The backend replaces hash with 'texture_N.png'. 
-  // We need to map those filenames to our blob URLs.
   let patchedMtl = mtlString;
   for (const [name, url] of Object.entries(textureUrls)) {
-    // Regex to match exact filename usage in map_Kd
-    // e.g. map_Kd texture_1.png
-    const reg = new RegExp(`(map_Kd\\s+)(.*${name})`, 'gi');
-    // Actually simplicity: global replace of filename
     patchedMtl = patchedMtl.replaceAll(name, url);
   }
 
   // 4. Setup Three.js Scene
   const scene = new THREE.Scene();
-  // Transparent bg? Or minimal studio?
-  // User wants a "nice render", maybe transparent PNG is best so they can compose it.
 
   // Lights - Balanced Studio Lighting
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.2); // Reduced ambient for contrast
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
   scene.add(ambientLight);
 
   const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
@@ -152,137 +150,81 @@ async function renderAvatarFromZip(zipBlob) {
   backLight.position.set(-5, 5, -5);
   scene.add(backLight);
 
-  // 5. Load Material & Object
-  const mtlLoader = new MTLLoader();
-  const materials = mtlLoader.parse(patchedMtl);
-  materials.preload();
-
-  // Fix materials (Alpha test & sRGB)
-  for (const materialName in materials.materials) {
-    const mat = materials.materials[materialName];
-    mat.alphaTest = 0.5;
-    mat.transparent = false; // Use alphaTest instead for better depth consistency
-    mat.side = THREE.DoubleSide;
-
-    // Ensure texture colors are interpreted correctly
-    if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
-
-    // Remove potential glossy washout
-    mat.shininess = 0;
-    if (mat.specular) mat.specular.setHex(0x000000);
-    // Reset color modulation
-    if (mat.color) mat.color.setHex(0xffffff);
-  }
-
-  const objLoader = new OBJLoader();
-  objLoader.setMaterials(materials);
-  const object = objLoader.parse(objString);
-
-  scene.add(object);
-
-  // 6. Camera Setup
-  // Center object
-  const box = new THREE.Box3().setFromObject(object);
-  const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
-
-  // Move object to origin
-  object.position.x += (object.position.x - center.x);
-  object.position.y += (object.position.y - center.y);
-  object.position.z += (object.position.z - center.z);
-
-  // Rotate 180 deg around Y
-  object.rotation.y = Math.PI;
-
-  // Camera - Clip start (near) adjusted to 0.01 for better close-up handling
-  const maxDim = Math.max(size.x, size.y, size.z);
-  const fov = 45;
-  const camera = new THREE.PerspectiveCamera(fov, 1, 0.01, 1000);
-  const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov * Math.PI / 360));
-
-  camera.position.set(0, size.y * 0.1, cameraZ * 2.0); // Reverted back to 2.0
-  camera.lookAt(0, 0, 0);
-
-  // 7. Render
-  const width = 1024;
-  const height = 1024;
-  const renderer = new THREE.WebGLRenderer({
-    alpha: true,
-    antialias: true,
-    preserveDrawingBuffer: true,
-    logarithmicDepthBuffer: true // Fix z-fighting/transparency overlap
-  });
-  renderer.setSize(width, height);
-  renderer.setPixelRatio(2); // High DPI
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.7; // Lower exposure to prevent white washout
-
-  // Wait a tick for textures? Usually Three.js handles it, but texture load is async.
-  // OBJLoader + MTLLoader sync parsing might not wait for image load.
-  // We need to wait for texture images to be ready.
-  // The Material Loader creates Texture objects. We can use loading manager?
-  // Simplified: wait a bit or check.
-  // Actually, createObjectURL is instant, but the image *decoding* by browser takes time.
-  // Let's implement a LoadingManager to be safe.
+  // 5. Load Material & Object with LoadingManager
+  const manager = new THREE.LoadingManager();
 
   return new Promise((resolve, reject) => {
-    // Re-do loading with manager if possible?
-    // MTLLoader returns materials immediately, but textures load async.
-    // Hack: Wait for all textures in materials to allow 'image' to load.
-    // Or just wait 500ms...
+    const mtlLoader = new MTLLoader(manager);
+    const materials = mtlLoader.parse(patchedMtl);
+    materials.preload();
 
-    // Better:
-    const manager = new THREE.LoadingManager();
+    // ✅ TRANSPARENCY FIX - Improved material settings
+    for (const materialName in materials.materials) {
+      const mat = materials.materials[materialName];
+
+      // Fix transparency handling
+      mat.transparent = true;  // Enable transparency
+      mat.alphaTest = 0.1;     // Lower threshold for better alpha coverage
+      mat.depthWrite = true;   // Write to depth buffer
+      mat.side = THREE.DoubleSide;
+
+      // Ensure texture colors are interpreted correctly
+      if (mat.map) {
+        mat.map.colorSpace = THREE.SRGBColorSpace;
+      }
+    }
+
+    const objLoader = new OBJLoader(manager);
+    objLoader.setMaterials(materials);
+    const object = objLoader.parse(objString);
+
+    // 6. Center and position object
+    const box = new THREE.Box3().setFromObject(object);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+
+    object.position.sub(center);
+    object.rotation.y = Math.PI;
+
+    scene.add(object);
+
+    // 7. Camera Setup
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const fov = 45;
+    const camera = new THREE.PerspectiveCamera(fov, 1, 0.1, 1000);
+    const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov * Math.PI / 360));
+
+    camera.position.set(0, size.y * 0.1, cameraZ * 2.0);
+    camera.lookAt(0, 0, 0);
+
+    // 8. Renderer Setup
+    const width = 1024;
+    const height = 1024;
+    const renderer = new THREE.WebGLRenderer({
+      alpha: true,
+      antialias: true,
+      preserveDrawingBuffer: true,
+      logarithmicDepthBuffer: true
+    });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(2);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+
+    // 9. Wait for textures to load, then render
     manager.onLoad = () => {
       renderer.render(scene, camera);
       renderer.domElement.toBlob((blob) => {
-        // Cleanup
         renderer.dispose();
-        // Revoke urls
-        for (const url of Object.values(textureUrls)) URL.revokeObjectURL(url);
+        for (const url of Object.values(textureUrls)) {
+          URL.revokeObjectURL(url);
+        }
         resolve(blob);
       });
     };
 
-    // We need to pass manager to loaders, but we used .parse() which doesn't use manager for XHR,
-    // BUT it uses manager for texture loading (ImageLoader).
-    // So we need to re-instantiate loaders with manager.
-
-    const mtlLoader2 = new MTLLoader(manager);
-    const materials2 = mtlLoader2.parse(patchedMtl);
-    materials2.preload();
-
-    const objLoader2 = new OBJLoader(manager);
-    objLoader2.setMaterials(materials2);
-    const object2 = objLoader2.parse(objString);
-
-    // Clear previous scene add
-    scene.clear();
-    scene.add(ambientLight);
-    scene.add(dirLight);
-    scene.add(backLight);
-
-    // Re-center logic
-    const box2 = new THREE.Box3().setFromObject(object2);
-    const center2 = box2.getCenter(new THREE.Vector3());
-    const size2 = box2.getSize(new THREE.Vector3());
-
-    object2.position.sub(center2); // Standard centering
-
-    // Rotate 180 deg
-    object2.rotation.y = Math.PI;
-
-    const maxDim2 = Math.max(size2.x, size2.y, size2.z);
-    const cameraZ2 = Math.abs(maxDim2 / 2 / Math.tan(fov * Math.PI / 360));
-    camera.position.set(0, size2.y * 0.1, cameraZ2 * 2.0);
-    camera.lookAt(0, 0, 0);
-
-    scene.add(object2);
-
-    // If no textures, manager.onLoad might trigger immediately.
-    // If textures, it waits.
-    // Fallback if no textures found?
+    // Fallback if no textures
     if (Object.keys(textures).length === 0) {
       renderer.render(scene, camera);
       renderer.domElement.toBlob((blob) => {
@@ -348,7 +290,7 @@ function setTab(mode) {
     sectionCurrent.classList.remove("hidden");
     sectionOutfits.classList.add("hidden");
 
-    statusBox = statusCurrent; // ✅ switch status target
+    statusBox = statusCurrent;
 
     setStatus("warn", "Current Avatar", "Enter a username and download their current avatar render.");
   } else {
@@ -358,7 +300,7 @@ function setTab(mode) {
     sectionOutfits.classList.remove("hidden");
     sectionCurrent.classList.add("hidden");
 
-    statusBox = statusOutfits; // ✅ switch status target
+    statusBox = statusOutfits;
 
     warmUpOutfitApi();
     setStatus("warn", "Saved Outfits", "Enter a username to load outfits, then click one to download render.");
@@ -403,7 +345,6 @@ async function downloadCurrentAvatarRender(username) {
 
   setStatus("warn", "Downloading", `Fetching 3D assets...\nUsername: ${username}`);
 
-  // Call the original ZIP backend
   const r = await fetch("/api/player-download", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -428,11 +369,9 @@ async function downloadCurrentAvatarRender(username) {
 
   setStatus("warn", "Rendering", "Generating 3D render...");
 
-  // CLIENT SIDE RENDER
   const pngBlob = await renderAvatarFromZip(zipBlob);
   const fileName = `Render_${username}_${userId}.png`;
 
-  // Show Preview
   showCurrentRender(pngBlob, fileName);
 
   setStatus("ok", "Success", `Render complete!`);
@@ -602,7 +541,6 @@ async function downloadOutfit(outfit) {
   const pngBlob = await renderAvatarFromZip(zipBlob);
   const fileName = `Render_Outfit_${outfit.id}.png`;
 
-  // Show Preview
   showOutfitRender(pngBlob, fileName);
 
   setStatus("ok", "Success", `Render complete!`);
@@ -636,7 +574,6 @@ async function renderOutfits(outfits) {
     `;
 
     btn.addEventListener("click", async () => {
-      // ✅ Selection Mode Logic
       if (isSelectionMode) {
         const id = outfit.id;
         if (selectedOutfits.has(id)) {
@@ -650,7 +587,6 @@ async function renderOutfits(outfits) {
         return;
       }
 
-      // ✅ Normal Download Click
       if (outfitDownloadBusy) return;
       outfitDownloadBusy = true;
 
@@ -694,6 +630,36 @@ async function renderOutfits(outfits) {
     selectBtn.style.display = "block";
   }
 }
+
+// ======================
+// Missing Load Button Handler
+// ======================
+loadBtn.addEventListener("click", async () => {
+  const username = cleanUsername(outfitUsernameInput.value);
+
+  if (!username) {
+    setStatus("err", "Error", "Enter a Roblox username.");
+    return;
+  }
+
+  loadBtn.disabled = true;
+  loadBtn.textContent = "Loading...";
+
+  try {
+    const userId = await usernameToUserId(username);
+    const outfits = await loadOutfitsByUserId(userId);
+    await renderOutfits(outfits);
+  } catch (e) {
+    setStatus("err", "Error", e.message);
+  } finally {
+    loadBtn.disabled = false;
+    loadBtn.textContent = "Load Outfits";
+  }
+});
+
+outfitUsernameInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") loadBtn.click();
+});
 
 // ======================
 // Selection & Bulk Download
@@ -746,7 +712,7 @@ downloadAllBtn.addEventListener("click", async () => {
     });
 
     const masterZip = new JSZip();
-    const BATCH_SIZE = 1; // Limit concurrency for rendering (GPU heavy)
+    const BATCH_SIZE = 1;
     let completed = 0;
 
     for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
@@ -780,7 +746,7 @@ downloadAllBtn.addEventListener("click", async () => {
     setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
 
     setStatus("ok", "Done", `Downloaded ${tasks.length} renders in\n${bundleName}`);
-    selectBtn.click(); // Toggle off
+    selectBtn.click();
 
   } catch (e) {
     setStatus("err", "Error", "Bulk download failed:\n" + e.message);
