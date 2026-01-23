@@ -1,7 +1,4 @@
 import JSZip from "jszip";
-
-import JSZip from "jszip";
-
 import { checkRateLimit, getIp } from "./lib/rate-limit.js";
 
 function getHashUrl(hash, type = "t") {
@@ -13,8 +10,6 @@ function getHashUrl(hash, type = "t") {
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
-
-// ... existing fetch helpers ...
 
 async function fetchTextWithRetry(url, getOptions = {}) {
   const tries = 5;
@@ -76,7 +71,13 @@ export default async function handler(req, res) {
   }
 
   // Forward User IP
-  const clientIp = getIp(req);
+  let clientIp = "unknown";
+  try {
+    clientIp = getIp(req);
+  } catch (e) {
+    console.error("Failed to get IP:", e);
+  }
+
   const forwardHeaders = {
     headers: {
       "X-Forwarded-For": clientIp,
