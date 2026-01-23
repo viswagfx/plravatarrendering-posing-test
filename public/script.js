@@ -221,6 +221,24 @@ async function renderAvatarFromZip(zipBlob) {
 
     // Better:
     const manager = new THREE.LoadingManager();
+
+    // 🔥 CRITICAL FIX: Intercept texture requests and serve Blob URLs
+    manager.setURLModifier((url) => {
+      // URL might be "texture_1.png" or "/texture_1.png" or "blob:..."
+      // If it's already a blob, leave it
+      if (url.startsWith("blob:")) return url;
+
+      // Clean the filename (remove path /)
+      const cleanName = url.split('/').pop().toLowerCase();
+
+      if (textureUrls[cleanName]) {
+        console.log(`REDIRECT: ${url} -> ${textureUrls[cleanName]}`);
+        return textureUrls[cleanName];
+      }
+
+      return url;
+    });
+
     manager.onLoad = () => {
       renderer.render(scene, camera);
       renderer.domElement.toBlob((blob) => {
