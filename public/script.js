@@ -140,15 +140,15 @@ async function renderAvatarFromZip(zipBlob) {
   // Transparent bg? Or minimal studio?
   // User wants a "nice render", maybe transparent PNG is best so they can compose it.
 
-  // Lights
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+  // Lights - Balanced Studio Lighting
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
   scene.add(ambientLight);
 
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
   dirLight.position.set(5, 10, 7);
   scene.add(dirLight);
 
-  const backLight = new THREE.DirectionalLight(0xffffff, 0.4);
+  const backLight = new THREE.DirectionalLight(0xffffff, 0.5);
   backLight.position.set(-5, 5, -5);
   scene.add(backLight);
 
@@ -156,6 +156,15 @@ async function renderAvatarFromZip(zipBlob) {
   const mtlLoader = new MTLLoader();
   const materials = mtlLoader.parse(patchedMtl);
   materials.preload();
+
+  // Fix materials (Alpha test & sRGB)
+  for (const materialName in materials.materials) {
+    const mat = materials.materials[materialName];
+    mat.alphaTest = 0.5;
+    mat.transparent = false; // Use alphaTest instead for better depth consistency
+    mat.side = THREE.DoubleSide;
+    // If map exists, ensure color space? standard loader does this if renderer set.
+  }
 
   const objLoader = new OBJLoader();
   objLoader.setMaterials(materials);
@@ -197,6 +206,7 @@ async function renderAvatarFromZip(zipBlob) {
   });
   renderer.setSize(width, height);
   renderer.setPixelRatio(2); // High DPI
+  renderer.outputColorSpace = THREE.SRGBColorSpace; // ✅ Correct colors (not washed out)
 
   // Wait a tick for textures? Usually Three.js handles it, but texture load is async.
   // OBJLoader + MTLLoader sync parsing might not wait for image load.
