@@ -1,5 +1,7 @@
 import JSZip from "jszip";
 
+import { checkRateLimit } from "./lib/rate-limit.js";
+
 function getHashUrl(hash, type = "t") {
   let st = 31;
   for (let ii = 0; ii < hash.length; ii++) st ^= hash[ii].charCodeAt(0);
@@ -9,6 +11,8 @@ function getHashUrl(hash, type = "t") {
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
+
+// ... existing fetch helpers ...
 
 async function fetchTextWithRetry(url, tries = 5) {
   for (let attempt = 0; attempt < tries; attempt++) {
@@ -54,8 +58,6 @@ function safeFileName(name) {
   return String(name || "User").replace(/[^a-z0-9]/gi, "_").slice(0, 60);
 }
 
-import { checkRateLimit } from "./lib/rate-limit.js";
-
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
@@ -66,7 +68,7 @@ export default async function handler(req, res) {
 
   // Rate Limit Check
   if (!checkRateLimit(req)) {
-    return res.status(429).json({ error: "Rate limit exceeded. Please wait a minute." });
+    return res.status(429).json({ error: "Too many requests. Please try again in a minute." });
   }
 
   try {
