@@ -645,6 +645,45 @@
     </div>
   </div>
 
+  <!-- Snapshot Modal -->
+  <div id="snapshotModal"
+    style="display:none; position:fixed; inset:0; z-index:100; align-items:center; justify-content:center; opacity:0; transition:opacity 0.2s ease;">
+    <!-- Backdrop -->
+    <div id="snapshotBackdrop"
+      style="position:absolute; inset:0; background:rgba(0,0,0,0.7); backdrop-filter:blur(8px);"></div>
+
+    <!-- Modal Content -->
+    <div class="card"
+      style="position:relative; z-index:10; max-width:500px; width:90%; padding:20px; animation: scaleIn 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);">
+      <div class="section-title">Review Snapshot</div>
+      <div class="hint">Does this look good?</div>
+
+      <div
+        style="background:rgba(0,0,0,0.3); border-radius:12px; border:1px solid rgba(255,255,255,0.1); overflow:hidden; margin:15px 0;">
+        <img id="snapshotPreviewImg" style="display:block; width:100%; height:auto;">
+      </div>
+
+      <div class="actions-row">
+        <button id="snapshotCancelBtn" class="secondary">Discard</button>
+        <button id="snapshotSaveBtn" class="primary">Save Image</button>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    @keyframes scaleIn {
+      from {
+        transform: scale(0.9);
+        opacity: 0;
+      }
+
+      to {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+  </style>
+
   <script type="module" src="./script.js"></script>
 </body>
 

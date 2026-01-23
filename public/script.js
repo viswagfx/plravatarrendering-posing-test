@@ -57,6 +57,48 @@ const outfitLightKey = document.getElementById("outfitLightKey");
 const outfitLightFill = document.getElementById("outfitLightFill");
 const outfitLightRim = document.getElementById("outfitLightRim");
 
+// Snapshot Modal Elements
+const snapshotModal = document.getElementById("snapshotModal");
+const snapshotPreviewImg = document.getElementById("snapshotPreviewImg");
+const snapshotSaveBtn = document.getElementById("snapshotSaveBtn");
+const snapshotCancelBtn = document.getElementById("snapshotCancelBtn");
+const snapshotBackdrop = document.getElementById("snapshotBackdrop");
+
+// Helper to open snapshot modal
+function openSnapshotModal(dataUrl, filename) {
+  snapshotPreviewImg.src = dataUrl;
+  snapshotModal.style.display = "flex";
+
+  // Fade in
+  requestAnimationFrame(() => {
+    snapshotModal.style.opacity = "1";
+  });
+
+  // Save Action
+  snapshotSaveBtn.onclick = () => {
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    closeSnapshotModal();
+  };
+
+  // Close Actions
+  const close = () => closeSnapshotModal();
+  snapshotCancelBtn.onclick = close;
+  snapshotBackdrop.onclick = close;
+}
+
+function closeSnapshotModal() {
+  snapshotModal.style.opacity = "0";
+  setTimeout(() => {
+    snapshotModal.style.display = "none";
+    snapshotPreviewImg.src = "";
+  }, 200);
+}
+
 const FALLBACK_THUMB =
   "https://tr.rbxcdn.com/30DAY-AvatarHeadshot-Png/420/420/AvatarHeadshot/Png/noFilter";
 
@@ -92,7 +134,8 @@ function showCurrentRender(zipBlob, filename) {
 
     // Setup download button
     currentRenderDownloadBtn.onclick = () => {
-      viewer.capture(filename);
+      const url = viewer.capture();
+      openSnapshotModal(url, filename);
     };
   });
 }
@@ -117,7 +160,8 @@ function showOutfitRender(zipBlob, filename) {
 
     // Setup download button
     outfitRenderDownloadBtn.onclick = () => {
-      viewer.capture(filename);
+      const url = viewer.capture();
+      openSnapshotModal(url, filename);
     };
 
     // Scroll to view
@@ -326,16 +370,10 @@ async function createAvatarViewer(zipBlob, container, controls) {
       container.innerHTML = "";
       for (const url of Object.values(textureUrls)) URL.revokeObjectURL(url);
     },
-    capture: (filename) => {
+    capture: () => {
       // Force render to ensure latest state
       renderer.render(scene, camera);
-      const dataUrl = renderer.domElement.toDataURL("image/png");
-      const a = document.createElement("a");
-      a.href = dataUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      return renderer.domElement.toDataURL("image/png");
     }
   };
 }
