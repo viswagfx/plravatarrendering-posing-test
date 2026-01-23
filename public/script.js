@@ -141,7 +141,7 @@ async function renderAvatarFromZip(zipBlob) {
   // User wants a "nice render", maybe transparent PNG is best so they can compose it.
 
   // Lights - Balanced Studio Lighting
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.2); // Reduced ambient for contrast
   scene.add(ambientLight);
 
   const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
@@ -166,6 +166,12 @@ async function renderAvatarFromZip(zipBlob) {
 
     // Ensure texture colors are interpreted correctly
     if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
+
+    // Remove potential glossy washout
+    mat.shininess = 0;
+    if (mat.specular) mat.specular.setHex(0x000000);
+    // Reset color modulation
+    if (mat.color) mat.color.setHex(0xffffff);
   }
 
   const objLoader = new OBJLoader();
@@ -210,7 +216,7 @@ async function renderAvatarFromZip(zipBlob) {
   renderer.setPixelRatio(2); // High DPI
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer.toneMappingExposure = 0.7; // Lower exposure to prevent white washout
 
   // Wait a tick for textures? Usually Three.js handles it, but texture load is async.
   // OBJLoader + MTLLoader sync parsing might not wait for image load.
