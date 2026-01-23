@@ -158,13 +158,25 @@ async function renderAvatarFromZip(zipBlob) {
     const materials = mtlLoader.parse(patchedMtl);
     materials.preload();
 
-    // ✅ TRANSPARENCY FIX - Use alphaTest WITHOUT transparent flag
+    // ✅ TRANSPARENCY FIX - Smart per-material handling
     for (const materialName in materials.materials) {
       const mat = materials.materials[materialName];
 
-      // For Roblox avatars, use alphaTest for cutout transparency
-      mat.alphaTest = 0.5;
-      mat.transparent = false;  // Don't enable blending
+      // Check material properties from MTL
+      const hasDissolveSetting = mat.opacity !== undefined && mat.opacity < 1.0;
+
+      if (hasDissolveSetting || mat.alphaTest > 0) {
+        // Material explicitly wants transparency
+        mat.transparent = true;
+        mat.alphaTest = 0.1;
+        mat.depthWrite = false;
+      } else {
+        // Material is opaque
+        mat.transparent = false;
+        mat.alphaTest = 0;
+        mat.depthWrite = true;
+      }
+
       mat.side = THREE.DoubleSide;
 
       // Ensure texture colors are interpreted correctly
