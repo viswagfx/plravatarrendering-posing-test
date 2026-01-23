@@ -119,10 +119,7 @@ async function renderAvatarFromZip(zipBlob) {
   const textureUrls = {};
   for (const [name, file] of Object.entries(textures)) {
     const blob = await file.async("blob");
-    // Store multiple keys for robustness (with/without path, lower/original)
-    const baseName = name.split('/').pop().toLowerCase();
-    textureUrls[baseName] = URL.createObjectURL(blob);
-    textureUrls[name] = textureUrls[baseName]; // Fallback
+    textureUrls[name] = URL.createObjectURL(blob);
   }
 
   const mtlString = await mtlFile.async("string");
@@ -132,19 +129,13 @@ async function renderAvatarFromZip(zipBlob) {
   // The backend replaces hash with 'texture_N.png'. 
   // We need to map those filenames to our blob URLs.
   let patchedMtl = mtlString;
-
-  // Robust replacement: find any "map_Kd ..." lines and replace the filename
-  patchedMtl = patchedMtl.replace(/map_Kd\s+(.+)$/gm, (match, filename) => {
-    const cleanName = filename.trim().toLowerCase();
-    const cleanBase = cleanName.split('/').pop(); // Handle "textures/texture_1.png"
-
-    if (textureUrls[cleanBase]) {
-      return `map_Kd ${textureUrls[cleanBase]}`;
-    }
-    return match; // Keep original if not found (will fail to load but safe)
-  });
-
-  console.log("Patched MTL:", patchedMtl); // Debug
+  for (const [name, url] of Object.entries(textureUrls)) {
+    // Regex to match exact filename usage in map_Kd
+    // e.g. map_Kd texture_1.png
+    const reg = new RegExp(`(map_Kd\\s+)(.*${name})`, 'gi');
+    // Actually simplicity: global replace of filename
+    patchedMtl = patchedMtl.replaceAll(name, url);
+  }
 
   // 4. Setup Three.js Scene
   const scene = new THREE.Scene();
@@ -221,24 +212,6 @@ async function renderAvatarFromZip(zipBlob) {
 
     // Better:
     const manager = new THREE.LoadingManager();
-
-    // 🔥 CRITICAL FIX: Intercept texture requests and serve Blob URLs
-    manager.setURLModifier((url) => {
-      // URL might be "texture_1.png" or "/texture_1.png" or "blob:..."
-      // If it's already a blob, leave it
-      if (url.startsWith("blob:")) return url;
-
-      // Clean the filename (remove path /)
-      const cleanName = url.split('/').pop().toLowerCase();
-
-      if (textureUrls[cleanName]) {
-        console.log(`REDIRECT: ${url} -> ${textureUrls[cleanName]}`);
-        return textureUrls[cleanName];
-      }
-
-      return url;
-    });
-
     manager.onLoad = () => {
       renderer.render(scene, camera);
       renderer.domElement.toBlob((blob) => {
@@ -274,23 +247,6 @@ async function renderAvatarFromZip(zipBlob) {
     const size2 = box2.getSize(new THREE.Vector3());
 
     object2.position.sub(center2); // Standard centering
-    object2.rotation.y = Math.PI; // Face forward (fix backshot)
-
-    // Fix Materials (Ghosting / Transparency issues)
-    object2.traverse((child) => {
-      if (child.isMesh) {
-        // Roblox models often come with weird material settings
-        // Force opaque with alphaTest for cutouts (hair, etc)
-        const mat = child.material;
-        if (mat) {
-          mat.transparent = false; // Disable blending transparency (fixes ghost look)
-          mat.alphaTest = 0.5;     // Enable alpha test for transparent textures (hair/glasses)
-          mat.side = THREE.DoubleSide; // Render both sides
-          mat.opacity = 1.0;
-          mat.shininess = 0; // Reduce plastic reflection
-        }
-      }
-    });
 
     const maxDim2 = Math.max(size2.x, size2.y, size2.z);
     const cameraZ2 = Math.abs(maxDim2 / 2 / Math.tan(fov * Math.PI / 360));
