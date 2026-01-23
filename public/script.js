@@ -1,3 +1,7 @@
+import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+import { OBJLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/OBJLoader.js";
+import { MTLLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/MTLLoader.js";
+
 // ======================
 // Elements
 // ======================
@@ -30,9 +34,239 @@ const FALLBACK_THUMB =
 // prevent spam clicks while downloading an outfit
 let outfitDownloadBusy = false;
 
-// Selection Mode
-let isSelectionMode = false;
-const selectedOutfits = new Set(); // Stores outfit IDs
+// ======================
+// Modal / Preview Logic
+// ======================
+function showpreview(blob, filename) {
+  const url = URL.createObjectURL(blob);
+
+  const modal = document.createElement("div");
+  modal.style.cssText = `
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; opacity: 0; transition: opacity 0.3s ease;
+  `;
+
+  modal.innerHTML = `
+    <div style="position: relative; max-width: 90vw; max-height: 80vh;">
+      <img src="${url}" style="max-width: 100%; max-height: 80vh; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
+      <button id="closePreview" style="position: absolute; top: -20px; right: -20px; background: #333; color: white; border: 2px solid rgba(255,255,255,0.2); width: 40px; height: 40px; border-radius: 50%; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;">×</button>
+    </div>
+    <div style="display: flex; gap: 16px; margin-top: 24px;">
+      <button id="downloadPreview" class="primary" style="margin-top:0; min-width: 160px;">Download PNG</button>
+      <button id="closePreviewBtn" class="secondary" style="margin-top:0;">Close</button>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  // Animate in
+  requestAnimationFrame(() => modal.style.opacity = "1");
+
+  const close = () => {
+    modal.style.opacity = "0";
+    setTimeout(() => {
+      modal.remove();
+      URL.revokeObjectURL(url);
+    }, 300);
+  };
+
+  const download = () => {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  modal.querySelector("#closePreview").onclick = close;
+  modal.querySelector("#closePreviewBtn").onclick = close;
+  modal.querySelector("#downloadPreview").onclick = download;
+  modal.onclick = (e) => {
+    if (e.target === modal) close();
+  };
+}
+
+// ======================
+// Renderer Logic
+// ======================
+async function renderAvatarFromZip(zipBlob) {
+  // 1. Unzip
+  const zip = await JSZip.loadAsync(zipBlob);
+
+  let objFile, mtlFile, metaFile;
+  const textures = {};
+
+  // Sort files
+  for (const [path, file] of Object.entries(zip.files)) {
+    if (file.dir) continue;
+    const lower = path.toLowerCase();
+    if (lower.endsWith(".obj")) objFile = file;
+    else if (lower.endsWith(".mtl")) mtlFile = file;
+    else if (lower.endsWith(".json")) metaFile = file;
+    else if (lower.endsWith(".png") || lower.endsWith(".jpg")) {
+      textures[path] = file; // path matches filename in MTL usually
+    }
+  }
+
+  if (!objFile || !mtlFile) {
+    throw new Error("ZIP missing .obj or .mtl files");
+  }
+
+  // 2. Prepare Resources (Blob URLs)
+  const textureUrls = {};
+  for (const [name, file] of Object.entries(textures)) {
+    const blob = await file.async("blob");
+    textureUrls[name] = URL.createObjectURL(blob);
+  }
+
+  const mtlString = await mtlFile.async("string");
+  const objString = await objFile.async("string");
+
+  // 3. Patch MTL to use Blob URLs
+  // The backend replaces hash with 'texture_N.png'. 
+  // We need to map those filenames to our blob URLs.
+  let patchedMtl = mtlString;
+  for (const [name, url] of Object.entries(textureUrls)) {
+    // Regex to match exact filename usage in map_Kd
+    // e.g. map_Kd texture_1.png
+    const reg = new RegExp(`(map_Kd\\s+)(.*${name})`, 'gi');
+    // Actually simplicity: global replace of filename
+    patchedMtl = patchedMtl.replaceAll(name, url);
+  }
+
+  // 4. Setup Three.js Scene
+  const scene = new THREE.Scene();
+  // Transparent bg? Or minimal studio?
+  // User wants a "nice render", maybe transparent PNG is best so they can compose it.
+
+  // Lights
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(ambientLight);
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  dirLight.position.set(5, 10, 7);
+  scene.add(dirLight);
+
+  const backLight = new THREE.DirectionalLight(0xffffff, 0.4);
+  backLight.position.set(-5, 5, -5);
+  scene.add(backLight);
+
+  // 5. Load Material & Object
+  const mtlLoader = new MTLLoader();
+  const materials = mtlLoader.parse(patchedMtl);
+  materials.preload();
+
+  const objLoader = new OBJLoader();
+  objLoader.setMaterials(materials);
+  const object = objLoader.parse(objString);
+
+  scene.add(object);
+
+  // 6. Camera Setup
+  // Center object
+  const box = new THREE.Box3().setFromObject(object);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+
+  // Move object to origin
+  object.position.x += (object.position.x - center.x);
+  object.position.y += (object.position.y - center.y);
+  object.position.z += (object.position.z - center.z);
+
+  // Camera
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const fov = 45;
+  const camera = new THREE.PerspectiveCamera(fov, 1, 0.1, 1000);
+  const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov * Math.PI / 360));
+
+  camera.position.set(0, size.y * 0.1, cameraZ * 1.5); // Slightly elevated and zoomed out
+  camera.lookAt(0, 0, 0);
+
+  // 7. Render
+  const width = 1024;
+  const height = 1024;
+  const renderer = new THREE.WebGLRenderer({
+    alpha: true,
+    antialias: true,
+    preserveDrawingBuffer: true
+  });
+  renderer.setSize(width, height);
+  renderer.setPixelRatio(2); // High DPI
+
+  // Wait a tick for textures? Usually Three.js handles it, but texture load is async.
+  // OBJLoader + MTLLoader sync parsing might not wait for image load.
+  // We need to wait for texture images to be ready.
+  // The Material Loader creates Texture objects. We can use loading manager?
+  // Simplified: wait a bit or check.
+  // Actually, createObjectURL is instant, but the image *decoding* by browser takes time.
+  // Let's implement a LoadingManager to be safe.
+
+  return new Promise((resolve, reject) => {
+    // Re-do loading with manager if possible?
+    // MTLLoader returns materials immediately, but textures load async.
+    // Hack: Wait for all textures in materials to allow 'image' to load.
+    // Or just wait 500ms...
+
+    // Better:
+    const manager = new THREE.LoadingManager();
+    manager.onLoad = () => {
+      renderer.render(scene, camera);
+      renderer.domElement.toBlob((blob) => {
+        // Cleanup
+        renderer.dispose();
+        // Revoke urls
+        for (const url of Object.values(textureUrls)) URL.revokeObjectURL(url);
+        resolve(blob);
+      });
+    };
+
+    // We need to pass manager to loaders, but we used .parse() which doesn't use manager for XHR,
+    // BUT it uses manager for texture loading (ImageLoader).
+    // So we need to re-instantiate loaders with manager.
+
+    const mtlLoader2 = new MTLLoader(manager);
+    const materials2 = mtlLoader2.parse(patchedMtl);
+    materials2.preload();
+
+    const objLoader2 = new OBJLoader(manager);
+    objLoader2.setMaterials(materials2);
+    const object2 = objLoader2.parse(objString);
+
+    // Clear previous scene add
+    scene.clear();
+    scene.add(ambientLight);
+    scene.add(dirLight);
+    scene.add(backLight);
+
+    // Re-center logic
+    const box2 = new THREE.Box3().setFromObject(object2);
+    const center2 = box2.getCenter(new THREE.Vector3());
+    const size2 = box2.getSize(new THREE.Vector3());
+
+    object2.position.sub(center2); // Standard centering
+
+    const maxDim2 = Math.max(size2.x, size2.y, size2.z);
+    const cameraZ2 = Math.abs(maxDim2 / 2 / Math.tan(fov * Math.PI / 360));
+    camera.position.set(0, size2.y * 0.1, cameraZ2 * 1.5);
+    camera.lookAt(0, 0, 0);
+
+    scene.add(object2);
+
+    // If no textures, manager.onLoad might trigger immediately.
+    // If textures, it waits.
+    // Fallback if no textures found?
+    if (Object.keys(textures).length === 0) {
+      renderer.render(scene, camera);
+      renderer.domElement.toBlob((blob) => {
+        renderer.dispose();
+        resolve(blob);
+      });
+    }
+  });
+}
 
 // ======================
 // Helpers
@@ -65,8 +299,12 @@ function safeFileName(name) {
   return String(name || "Outfit").replace(/[^a-z0-9]/gi, "_").slice(0, 50);
 }
 
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 // ======================
-// Warm-up (fix Vercel cold-start 404)
+// Warm-up
 // ======================
 async function warmUpOutfitApi() {
   try {
@@ -131,48 +369,48 @@ async function usernameToUserId(username) {
 }
 
 // ======================
-// Current Avatar ZIP download (backend)
+// Current Avatar ZIP download (backend) -> RENDER
 // ======================
 async function downloadCurrentAvatarRender(username) {
   setStatus("warn", "Working", "Looking up username...");
 
   const userId = await usernameToUserId(username);
 
-  setStatus("warn", "Fetching", `Getting render for ${username}...`);
+  setStatus("warn", "Downloading", `Fetching 3D assets...\nUsername: ${username}`);
 
-  // Fetch render URL from roproxy
-  // 720x720 is a good high quality size for full body
-  const thumbUrl = `https://thumbnails.roproxy.com/v1/users/avatar?userIds=${userId}&size=720x720&format=Png&isCircular=false`;
+  // Call the original ZIP backend
+  const r = await fetch("/api/player-download", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, username })
+  });
 
-  const r = await fetch(thumbUrl);
-  if (!r.ok) throw new Error(`Thumbnail API failed (HTTP ${r.status})`);
-
-  const j = await r.json();
-  const data = j.data?.[0];
-
-  if (!data || data.state !== "Completed") {
-    throw new Error("Render not available or pending for this user.");
+  if (!r.ok) {
+    let msg = `Download failed (HTTP ${r.status})`;
+    try {
+      const j = await r.json();
+      msg = j?.error || j?.details || msg;
+    } catch {
+      try {
+        const t = await r.text();
+        if (t) msg = t.slice(0, 200);
+      } catch { }
+    }
+    throw new Error(msg);
   }
 
-  const imageUrl = data.imageUrl;
+  const zipBlob = await r.blob();
 
-  // Fetch the actual image data
-  setStatus("warn", "Downloading", "Fetching image data...");
-  const imgRes = await fetch(imageUrl);
-  if (!imgRes.ok) throw new Error("Failed to download image data.");
+  setStatus("warn", "Rendering", "Generating 3D render...");
 
-  const blob = await imgRes.blob();
+  // CLIENT SIDE RENDER
+  const pngBlob = await renderAvatarFromZip(zipBlob);
   const fileName = `Render_${username}_${userId}.png`;
 
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  // Show Preview
+  showpreview(pngBlob, fileName);
 
-  setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
-  setStatus("ok", "Success", `Downloaded render:\n${fileName}`);
+  setStatus("ok", "Success", `Render complete!`);
 }
 
 downloadCurrentBtn.addEventListener("click", async () => {
@@ -224,7 +462,6 @@ async function loadOutfitsByUserId(userId) {
     throw new Error("Backend response missing outfits list.");
   }
 
-  // ✅ keep fetched visible (you wanted this)
   setStatus("ok", "Outfits Loaded", `Fetched: ${j.outfits.length}`);
 
   return j.outfits;
@@ -270,49 +507,80 @@ async function fetchOutfitThumbnails(outfitIds) {
 }
 
 // ======================
-// Outfit download ZIP (backend)
+// Outfit download ZIP (backend) -> RENDER
 // ======================
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
-async function fetchOutfitRenderBlob(outfitId) {
-  // 420x420 is good for outfits
-  const thumbUrl = `https://thumbnails.roproxy.com/v1/users/outfits?userOutfitIds=${outfitId}&size=420x420&format=Png&isCircular=false`;
+async function fetchOutfitZipBlob(outfit) {
+  const maxTries = 4;
 
-  const r = await fetch(thumbUrl);
-  if (!r.ok) throw new Error(`Thumbnail API failed (HTTP ${r.status})`);
+  for (let attempt = 1; attempt <= maxTries; attempt++) {
+    try {
+      const r = await fetch("/api/outfit-download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          outfitId: outfit.id,
+          outfitName: outfit.name
+        })
+      });
 
-  const j = await r.json();
-  const data = j.data?.[0];
+      if (r.status === 404 && attempt < maxTries) {
+        if (!isSelectionMode) {
+          setStatus("warn", "Warming up server", `Outfit API not ready yet (404)\nRetrying... (${attempt}/${maxTries})`);
+        }
+        await sleep(800 * attempt);
+        continue;
+      }
 
-  if (!data || data.state !== "Completed") {
-    throw new Error("Render not available.");
+      if (r.status === 429 && attempt < maxTries) {
+        if (!isSelectionMode) {
+          setStatus("warn", "Rate Limited", `Got 429 too many requests\nRetrying... (${attempt}/${maxTries})`);
+        }
+        await sleep(1200 * attempt);
+        continue;
+      }
+
+      if (!r.ok) {
+        let msg = `Download failed (HTTP ${r.status})`;
+        try {
+          const j = await r.json();
+          msg = j?.error || j?.details || msg;
+        } catch {
+          try {
+            const t = await r.text();
+            if (t) msg = t.slice(0, 200);
+          } catch { }
+        }
+        throw new Error(msg);
+      }
+
+      return await r.blob();
+    } catch (e) {
+      if (attempt < maxTries) {
+        if (!isSelectionMode) {
+          setStatus("warn", "Retrying", `${e.message}\nRetrying... (${attempt}/${maxTries})`);
+        }
+        await sleep(800 * attempt);
+        continue;
+      }
+      throw e;
+    }
   }
-
-  const imageUrl = data.imageUrl;
-
-  const imgRes = await fetch(imageUrl);
-  if (!imgRes.ok) throw new Error("Failed to download image data.");
-
-  return await imgRes.blob();
 }
 
 async function downloadOutfit(outfit) {
-  setStatus("warn", "Fetching", `Getting render for outfit: ${outfit.name}...`);
+  setStatus("warn", "Fetching", `Getting 3D assets for: ${outfit.name}...`);
 
-  const blob = await fetchOutfitRenderBlob(outfit.id);
+  const zipBlob = await fetchOutfitZipBlob(outfit);
+
+  setStatus("warn", "Rendering", `Rendering ${outfit.name}...`);
+  const pngBlob = await renderAvatarFromZip(zipBlob);
   const fileName = `Render_Outfit_${outfit.id}.png`;
 
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  // Show Preview
+  showpreview(pngBlob, fileName);
 
-  setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
-  setStatus("ok", "Success", `Downloaded render:\n${fileName}`);
+  setStatus("ok", "Success", `Render complete!`);
 }
 
 // ======================
@@ -320,11 +588,8 @@ async function downloadOutfit(outfit) {
 // ======================
 async function renderOutfits(outfits) {
   clearOutfits();
-
-  // keep "Fetched: X" visible
   setStatus("ok", "Outfits Loaded", `Fetched: ${outfits.length}`);
 
-  // render instantly
   for (const outfit of outfits) {
     const btn = document.createElement("button");
     btn.className = "outfit-btn";
@@ -400,8 +665,6 @@ async function renderOutfits(outfits) {
   });
 
   setStatus("ok", "Ready", `Outfits ready: ${outfits.length}`);
-
-  // Show "Select" button if we have outfits
   if (outfits.length > 0) {
     selectBtn.style.display = "block";
   }
@@ -422,11 +685,9 @@ selectBtn.addEventListener("click", () => {
   if (isSelectionMode) {
     selectBtn.textContent = "Cancel";
     outfitsGrid.classList.add("selection-active");
-    // enable selection mode on all buttons
     outfitsGrid.querySelectorAll(".outfit-btn").forEach(b => b.classList.add("selection-mode"));
     updateDownloadAllBtn();
   } else {
-    // Cancel mode
     selectBtn.textContent = "Select";
     outfitsGrid.classList.remove("selection-active");
     selectedOutfits.clear();
@@ -450,10 +711,6 @@ downloadAllBtn.addEventListener("click", async () => {
   try {
     setStatus("warn", "Preparing", `Starting bulk download for ${selectedOutfits.size} outfits...`);
 
-    // 1. Gather selected outfit objects (we need names)
-    // We can find them from the grid buttons or just store them. 
-    // Easier to just grab from DOM or re-fetch? 
-    // Let's grab name from DOM since we didn't store the full objects.
     const tasks = [];
     const buttons = outfitsGrid.querySelectorAll(".outfit-btn.selected");
 
@@ -463,36 +720,32 @@ downloadAllBtn.addEventListener("click", async () => {
       tasks.push({ id, name });
     });
 
-    // 2. Init JSZip
     const masterZip = new JSZip();
-
-    // 3. Process sequentially or parallel? 
-    // Parallel might rate limit. Let's do batches of 3.
-    const BATCH_SIZE = 3;
+    const BATCH_SIZE = 1; // Limit concurrency for rendering (GPU heavy)
     let completed = 0;
 
     for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
       const chunk = tasks.slice(i, i + BATCH_SIZE);
       await Promise.all(chunk.map(async (task) => {
         try {
-          const blob = await fetchOutfitRenderBlob(task.id);
+          const zipBlob = await fetchOutfitZipBlob(task);
+          const pngBlob = await renderAvatarFromZip(zipBlob);
+
           const safeName = task.name.replace(/[^a-z0-9]/gi, "_").slice(0, 50);
-          masterZip.file(`Render_${task.id}_${safeName}.png`, blob);
+          masterZip.file(`Render_${task.id}_${safeName}.png`, pngBlob);
         } catch (e) {
           console.error(`Failed to download ${task.name}:`, e);
           masterZip.file(`FAILED_${task.id}.txt`, `Error: ${e.message}`);
         }
         completed++;
-        setStatus("warn", "Downloading", `Progress: ${completed}/${tasks.length}\n(Building Master ZIP)`);
+        setStatus("warn", "Downloading", `Progress: ${completed}/${tasks.length}\n(Rendering & Zipping)`);
       }));
     }
 
-    // 4. Generate Master ZIP
     setStatus("warn", "Zipping", "Compressing final bundle...");
     const content = await masterZip.generateAsync({ type: "blob" });
-    const bundleName = `Outfits_Bundle_${Date.now()}.zip`;
+    const bundleName = `Renders_Bundle_${Date.now()}.zip`;
 
-    // 5. Download
     const a = document.createElement("a");
     a.href = URL.createObjectURL(content);
     a.download = bundleName;
@@ -501,13 +754,7 @@ downloadAllBtn.addEventListener("click", async () => {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
 
-    // 6. Reset
-    setStatus("ok", "Done", `Downloaded ${tasks.length} outfits in\n${bundleName}`);
-
-    // Optional: Turn off selection mode? Or keep it?
-    // Let's keep it but clear selection logic if desired. 
-    // For now, let's leave mode on but maybe clear selection?
-    // User probably wants to clear.
+    setStatus("ok", "Done", `Downloaded ${tasks.length} renders in\n${bundleName}`);
     selectBtn.click(); // Toggle off
 
   } catch (e) {
@@ -518,39 +765,6 @@ downloadAllBtn.addEventListener("click", async () => {
     selectBtn.disabled = false;
     loadBtn.disabled = false;
   }
-});
-
-
-// ======================
-// Load outfits button (username -> userId -> outfits)
-// ======================
-loadBtn.addEventListener("click", async () => {
-  const username = cleanUsername(outfitUsernameInput.value);
-
-  if (!username) {
-    setStatus("err", "Error", "Enter a Roblox username.");
-    return;
-  }
-
-  loadBtn.disabled = true;
-  loadBtn.textContent = "Loading...";
-
-  try {
-    setStatus("warn", "Working", "Looking up username...");
-    const userId = await usernameToUserId(username);
-
-    const outfits = await loadOutfitsByUserId(userId);
-    await renderOutfits(outfits);
-  } catch (e) {
-    setStatus("err", "Error", e.message);
-  } finally {
-    loadBtn.disabled = false;
-    loadBtn.textContent = "Load Outfits";
-  }
-});
-
-outfitUsernameInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") loadBtn.click();
 });
 
 // ======================
