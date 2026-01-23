@@ -434,6 +434,70 @@
       text-shadow: 0 0 12px rgba(255, 51, 51, 0.6);
       transform: translateY(-1px);
     }
+
+    /* Lighting Controls & Canvas */
+    .render-container {
+      width: 100%;
+      height: 500px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 15px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      position: relative;
+    }
+
+    .render-container canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+      outline: none;
+    }
+
+    .lighting-controls {
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 12px;
+      padding: 15px;
+      margin-bottom: 15px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .control-header {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 12px;
+      text-align: left;
+    }
+
+    .control-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      text-align: left;
+    }
+
+    .control-group label {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    input[type=range] {
+      width: 100%;
+      accent-color: #6c5ce7;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      outline: none;
+    }
   </style>
 </head>
 
@@ -474,10 +538,34 @@
         <!-- Render Output Area -->
         <div id="currentRenderOutput"
           style="margin-top:20px; text-align:center; display:none; animation: fadeIn 0.5s ease;">
-          <img id="currentRenderImg"
-            style="max-width:100%; border-radius:12px; margin-bottom:14px; border: 1px solid rgba(255,255,255,0.1);">
-          <br>
-          <button id="currentRenderDownloadBtn" class="primary">Download PNG</button>
+
+          <div id="currentRenderContainer" class="render-container"></div>
+
+          <!-- Lighting Controls -->
+          <div class="lighting-controls">
+            <div class="control-header">Lighting Adjustments</div>
+
+            <div class="control-grid">
+              <div class="control-group">
+                <label>Ambient</label>
+                <input type="range" id="currLightAmbient" min="0" max="3" step="0.1" value="0.6">
+              </div>
+              <div class="control-group">
+                <label>Key</label>
+                <input type="range" id="currLightKey" min="0" max="3" step="0.1" value="1.2">
+              </div>
+              <div class="control-group">
+                <label>Fill</label>
+                <input type="range" id="currLightFill" min="0" max="3" step="0.1" value="0.6">
+              </div>
+              <div class="control-group">
+                <label>Rim</label>
+                <input type="range" id="currLightRim" min="0" max="3" step="0.1" value="0.4">
+              </div>
+            </div>
+          </div>
+
+          <button id="currentRenderDownloadBtn" class="primary" style="margin-top: 15px;">Download PNG</button>
         </div>
       </div>
 
@@ -509,9 +597,33 @@
             <button id="closeOutfitRender" class="secondary" style="padding:6px 12px; font-size:12px; width:auto;">Close
               Preview</button>
           </div>
-          <img id="outfitRenderImg"
-            style="max-width:100%; border-radius:12px; margin-bottom:14px; border: 1px solid rgba(255,255,255,0.1);">
-          <br>
+
+          <div id="outfitRenderContainer" class="render-container"></div>
+
+          <!-- Lighting Controls (Outfit) -->
+          <div class="lighting-controls">
+            <div class="control-header">Lighting Adjustments</div>
+
+            <div class="control-grid">
+              <div class="control-group">
+                <label>Ambient</label>
+                <input type="range" id="outfitLightAmbient" min="0" max="3" step="0.1" value="0.6">
+              </div>
+              <div class="control-group">
+                <label>Key</label>
+                <input type="range" id="outfitLightKey" min="0" max="3" step="0.1" value="1.2">
+              </div>
+              <div class="control-group">
+                <label>Fill</label>
+                <input type="range" id="outfitLightFill" min="0" max="3" step="0.1" value="0.6">
+              </div>
+              <div class="control-group">
+                <label>Rim</label>
+                <input type="range" id="outfitLightRim" min="0" max="3" step="0.1" value="0.4">
+              </div>
+            </div>
+          </div>
+
           <button id="outfitRenderDownloadBtn" class="primary">Download PNG</button>
         </div>
 

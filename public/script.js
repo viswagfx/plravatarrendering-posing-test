@@ -37,12 +37,24 @@ const closeOutfitRender = document.getElementById("closeOutfitRender");
 
 // Render Outputs
 const currentRenderOutput = document.getElementById("currentRenderOutput");
-const currentRenderImg = document.getElementById("currentRenderImg");
+const currentRenderContainer = document.getElementById("currentRenderContainer");
 const currentRenderDownloadBtn = document.getElementById("currentRenderDownloadBtn");
 
+// Lighting Controls (Current)
+const currLightAmbient = document.getElementById("currLightAmbient");
+const currLightKey = document.getElementById("currLightKey");
+const currLightFill = document.getElementById("currLightFill");
+const currLightRim = document.getElementById("currLightRim");
+
 const outfitRenderOutput = document.getElementById("outfitRenderOutput");
-const outfitRenderImg = document.getElementById("outfitRenderImg");
+const outfitRenderContainer = document.getElementById("outfitRenderContainer");
 const outfitRenderDownloadBtn = document.getElementById("outfitRenderDownloadBtn");
+
+// Lighting Controls (Outfit)
+const outfitLightAmbient = document.getElementById("outfitLightAmbient");
+const outfitLightKey = document.getElementById("outfitLightKey");
+const outfitLightFill = document.getElementById("outfitLightFill");
+const outfitLightRim = document.getElementById("outfitLightRim");
 
 const FALLBACK_THUMB =
   "https://tr.rbxcdn.com/30DAY-AvatarHeadshot-Png/420/420/AvatarHeadshot/Png/noFilter";
@@ -53,200 +65,291 @@ let outfitDownloadBusy = false;
 // ======================
 // Inline Render Logic
 // ======================
-function showCurrentRender(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  currentRenderImg.src = url;
+let activeViewer = null;
+
+// ======================
+// Inline Render Logic
+// ======================
+function showCurrentRender(zipBlob, filename) {
+  if (activeViewer) {
+    activeViewer.dispose();
+    activeViewer = null;
+  }
+
   currentRenderOutput.style.display = "block";
 
-  // Setup download button
-  currentRenderDownloadBtn.onclick = () => {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+  // Light controls map
+  const controls = {
+    ambient: currLightAmbient,
+    key: currLightKey,
+    fill: currLightFill,
+    rim: currLightRim
   };
+
+  createAvatarViewer(zipBlob, currentRenderContainer, controls).then(viewer => {
+    activeViewer = viewer;
+
+    // Setup download button
+    currentRenderDownloadBtn.onclick = () => {
+      viewer.capture(filename);
+    };
+  });
 }
 
-function showOutfitRender(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  outfitRenderImg.src = url;
+function showOutfitRender(zipBlob, filename) {
+  if (activeViewer) {
+    activeViewer.dispose();
+    activeViewer = null;
+  }
+
   outfitRenderOutput.style.display = "block";
 
-  // Setup download button
-  outfitRenderDownloadBtn.onclick = () => {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+  const controls = {
+    ambient: outfitLightAmbient,
+    key: outfitLightKey,
+    fill: outfitLightFill,
+    rim: outfitLightRim
   };
 
-  // Scroll to view
-  outfitRenderOutput.scrollIntoView({ behavior: "smooth", block: "center" });
+  createAvatarViewer(zipBlob, outfitRenderContainer, controls).then(viewer => {
+    activeViewer = viewer;
+
+    // Setup download button
+    outfitRenderDownloadBtn.onclick = () => {
+      viewer.capture(filename);
+    };
+
+    // Scroll to view
+    outfitRenderOutput.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
 }
 
 closeOutfitRender.onclick = () => {
   outfitRenderOutput.style.display = "none";
-  outfitRenderImg.src = "";
+  if (activeViewer) {
+    activeViewer.dispose();
+    activeViewer = null;
+  }
 };
 
 // ======================
-// Renderer Logic (TRANSPARENCY FIXED)
+// Core 3D Logic
 // ======================
-async function renderAvatarFromZip(zipBlob) {
-  // 1. Unzip
+
+// Helper: Build Scene (Common for both Interactive & Batch)
+async function buildSceneFromZip(zipBlob) {
   const zip = await JSZip.loadAsync(zipBlob);
 
-  let objFile, mtlFile, metaFile;
+  let objFile, mtlFile;
   const textures = {};
 
-  // Sort files
   for (const [path, file] of Object.entries(zip.files)) {
     if (file.dir) continue;
     const lower = path.toLowerCase();
     if (lower.endsWith(".obj")) objFile = file;
     else if (lower.endsWith(".mtl")) mtlFile = file;
-    else if (lower.endsWith(".json")) metaFile = file;
     else if (lower.endsWith(".png") || lower.endsWith(".jpg")) {
       textures[path] = file;
     }
   }
 
-  if (!objFile || !mtlFile) {
-    throw new Error("ZIP missing .obj or .mtl files");
-  }
+  if (!objFile || !mtlFile) throw new Error("ZIP missing .obj or .mtl files");
 
-  // 2. Prepare Resources (Blob URLs)
   const textureUrls = {};
   for (const [name, file] of Object.entries(textures)) {
     const blob = await file.async("blob");
     textureUrls[name] = URL.createObjectURL(blob);
   }
 
-  const mtlString = await mtlFile.async("string");
+  let mtlString = await mtlFile.async("string");
   const objString = await objFile.async("string");
 
-  // 3. Patch MTL to use Blob URLs
-  let patchedMtl = mtlString;
+  // Patch MTL
   for (const [name, url] of Object.entries(textureUrls)) {
-    patchedMtl = patchedMtl.replaceAll(name, url);
+    mtlString = mtlString.replaceAll(name, url);
   }
 
-  // 4. Setup Three.js Scene
-  const scene = new THREE.Scene();
-
-  // Lights - Improved Studio Lighting
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-  scene.add(ambientLight);
-
-  const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
-  keyLight.position.set(5, 10, 7);
-  scene.add(keyLight);
-
-  const fillLight = new THREE.DirectionalLight(0xffffff, 0.6);
-  fillLight.position.set(-5, 5, 5);
-  scene.add(fillLight);
-
-  const rimLight = new THREE.DirectionalLight(0xffffff, 0.4);
-  rimLight.position.set(0, 5, -10);
-  scene.add(rimLight);
-
-  // 5. Load Material & Object with LoadingManager
   const manager = new THREE.LoadingManager();
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const mtlLoader = new MTLLoader(manager);
-    const materials = mtlLoader.parse(patchedMtl);
+    const materials = mtlLoader.parse(mtlString);
     materials.preload();
 
-    // ✅ TRANSPARENCY FIX - Smart per-material handling
-    for (const materialName in materials.materials) {
-      const mat = materials.materials[materialName];
+    // Material Fixes
+    for (const name in materials.materials) {
+      const mat = materials.materials[name];
+      const hasDissolve = mat.opacity !== undefined && mat.opacity < 1.0;
 
-      // Check material properties from MTL
-      const hasDissolveSetting = mat.opacity !== undefined && mat.opacity < 1.0;
-
-      if (hasDissolveSetting || mat.alphaTest > 0) {
-        // Material explicitly wants transparency
+      if (hasDissolve || mat.alphaTest > 0) {
         mat.transparent = true;
-        mat.alphaTest = 0.1;
-        mat.depthWrite = false;
+        mat.alphaTest = 0.5; // Higher threshold for cleaner edges
+        mat.depthWrite = true; // Use alphaTest so we CAN write depth
       } else {
-        // Material is opaque
         mat.transparent = false;
         mat.alphaTest = 0;
         mat.depthWrite = true;
       }
-
       mat.side = THREE.DoubleSide;
-
-      // Ensure texture colors are interpreted correctly
-      if (mat.map) {
-        mat.map.colorSpace = THREE.SRGBColorSpace;
-      }
+      if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
     }
 
     const objLoader = new OBJLoader(manager);
     objLoader.setMaterials(materials);
     const object = objLoader.parse(objString);
 
-    // 6. Center and position object
+    // Center Object
     const box = new THREE.Box3().setFromObject(object);
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
-
     object.position.sub(center);
     object.rotation.y = Math.PI;
 
+    // Scene
+    const scene = new THREE.Scene();
     scene.add(object);
 
-    // 7. Camera Setup
+    // Camera
     const maxDim = Math.max(size.x, size.y, size.z);
     const fov = 45;
     const camera = new THREE.PerspectiveCamera(fov, 1, 0.1, 1000);
     const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov * Math.PI / 360));
-
     camera.position.set(0, size.y * 0.1, cameraZ * 2.0);
     camera.lookAt(0, 0, 0);
 
-    // 8. Renderer Setup
-    const width = 1024;
-    const height = 1024;
-    const renderer = new THREE.WebGLRenderer({
-      alpha: true,
-      antialias: true,
-      preserveDrawingBuffer: true,
-      logarithmicDepthBuffer: true
-    });
-    renderer.setSize(width, height);
-    renderer.setPixelRatio(2);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
+    // Lights (Base Setup)
+    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    const key = new THREE.DirectionalLight(0xffffff, 1.2);
+    key.position.set(5, 10, 7);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.6);
+    fill.position.set(-5, 5, 5);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.4);
+    rim.position.set(0, 5, -10);
 
-    // 9. Wait for textures to load, then render
+    scene.add(ambient, key, fill, rim);
+
+    // Resolve when textures ready
     manager.onLoad = () => {
-      renderer.render(scene, camera);
-      renderer.domElement.toBlob((blob) => {
-        renderer.dispose();
-        for (const url of Object.values(textureUrls)) {
-          URL.revokeObjectURL(url);
-        }
-        resolve(blob);
+      resolve({
+        scene, camera,
+        lights: { ambient, key, fill, rim },
+        textureUrls
       });
     };
 
-    // Fallback if no textures
+    // Fallback
     if (Object.keys(textures).length === 0) {
-      renderer.render(scene, camera);
-      renderer.domElement.toBlob((blob) => {
-        renderer.dispose();
-        resolve(blob);
+      resolve({
+        scene, camera,
+        lights: { ambient, key, fill, rim },
+        textureUrls
       });
     }
+  }); // End Promise
+}
+
+// Interactive Viewer (updated for sliders)
+async function createAvatarViewer(zipBlob, container, controls) {
+  // Clear container
+  container.innerHTML = "";
+
+  const { scene, camera, lights, textureUrls } = await buildSceneFromZip(zipBlob);
+
+  const renderer = new THREE.WebGLRenderer({
+    alpha: true,
+    antialias: true,
+    preserveDrawingBuffer: true,
+    logarithmicDepthBuffer: true
+  });
+
+  // Use container size
+  const width = container.clientWidth || 500;
+  const height = container.clientHeight || 500;
+  renderer.setSize(width, height);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+
+  container.appendChild(renderer.domElement);
+
+  // Resize handler
+  const onResize = () => {
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  };
+  window.addEventListener("resize", onResize);
+
+  // Lighting & Loop
+  let running = true;
+  const animate = () => {
+    if (!running) return;
+
+    // Update lights from sliders
+    if (controls) {
+      lights.ambient.intensity = parseFloat(controls.ambient.value);
+      lights.key.intensity = parseFloat(controls.key.value);
+      lights.fill.intensity = parseFloat(controls.fill.value);
+      lights.rim.intensity = parseFloat(controls.rim.value);
+    }
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  };
+  animate();
+
+  return {
+    dispose: () => {
+      running = false;
+      window.removeEventListener("resize", onResize);
+      renderer.dispose();
+      container.innerHTML = "";
+      for (const url of Object.values(textureUrls)) URL.revokeObjectURL(url);
+    },
+    capture: (filename) => {
+      // Force render to ensure latest state
+      renderer.render(scene, camera);
+      const dataUrl = renderer.domElement.toDataURL("image/png");
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+  };
+}
+
+// Batch Renderer (for bulk download) - headless-ish
+async function renderAvatarFromZip(zipBlob) {
+  const { scene, camera, textureUrls } = await buildSceneFromZip(zipBlob);
+
+  const width = 1024;
+  const height = 1024;
+  const renderer = new THREE.WebGLRenderer({
+    alpha: true,
+    antialias: true,
+    preserveDrawingBuffer: true,
+    logarithmicDepthBuffer: true
+  });
+
+  renderer.setSize(width, height);
+  renderer.setPixelRatio(1); // Keep 1024x1024 strictly
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+
+  renderer.render(scene, camera);
+
+  return new Promise(resolve => {
+    renderer.domElement.toBlob(blob => {
+      renderer.dispose();
+      for (const url of Object.values(textureUrls)) URL.revokeObjectURL(url);
+      resolve(blob);
+    });
   });
 }
 
@@ -384,12 +487,13 @@ async function downloadCurrentAvatarRender(username) {
 
   setStatus("warn", "Rendering", "Generating 3D render...");
 
-  const pngBlob = await renderAvatarFromZip(zipBlob);
+  setStatus("warn", "Rendering", "Generating 3D render...");
+
+  // Pass ZIP blob to viewer
   const fileName = `Render_${username}_${userId}.png`;
+  showCurrentRender(zipBlob, fileName);
 
-  showCurrentRender(pngBlob, fileName);
-
-  setStatus("ok", "Success", `Render complete!`);
+  setStatus("ok", "Success", `Render ready!`);
 }
 
 downloadCurrentBtn.addEventListener("click", async () => {
@@ -553,12 +657,12 @@ async function downloadOutfit(outfit) {
   const zipBlob = await fetchOutfitZipBlob(outfit);
 
   setStatus("warn", "Rendering", `Rendering ${outfit.name}...`);
-  const pngBlob = await renderAvatarFromZip(zipBlob);
+  setStatus("warn", "Rendering", `Rendering ${outfit.name}...`);
+  // Pass ZIP to viewer
   const fileName = `Render_Outfit_${outfit.id}.png`;
+  showOutfitRender(zipBlob, fileName);
 
-  showOutfitRender(pngBlob, fileName);
-
-  setStatus("ok", "Success", `Render complete!`);
+  setStatus("ok", "Success", `Render ready!`);
 }
 
 // ======================
