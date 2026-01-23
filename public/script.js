@@ -247,6 +247,23 @@ async function renderAvatarFromZip(zipBlob) {
     const size2 = box2.getSize(new THREE.Vector3());
 
     object2.position.sub(center2); // Standard centering
+    object2.rotation.y = Math.PI; // Face forward (fix backshot)
+
+    // Fix Materials (Ghosting / Transparency issues)
+    object2.traverse((child) => {
+      if (child.isMesh) {
+        // Roblox models often come with weird material settings
+        // Force opaque with alphaTest for cutouts (hair, etc)
+        const mat = child.material;
+        if (mat) {
+          mat.transparent = false; // Disable blending transparency (fixes ghost look)
+          mat.alphaTest = 0.5;     // Enable alpha test for transparent textures (hair/glasses)
+          mat.side = THREE.DoubleSide; // Render both sides
+          mat.opacity = 1.0;
+          mat.shininess = 0; // Reduce plastic reflection
+        }
+      }
+    });
 
     const maxDim2 = Math.max(size2.x, size2.y, size2.z);
     const cameraZ2 = Math.abs(maxDim2 / 2 / Math.tan(fov * Math.PI / 360));
