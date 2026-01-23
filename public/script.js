@@ -1,6 +1,6 @@
-import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
-import { OBJLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/OBJLoader.js";
-import { MTLLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/MTLLoader.js";
+import * as THREE from 'three';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 
 // ======================
 // Elements
@@ -27,6 +27,16 @@ const loadBtn = document.getElementById("loadBtn");
 const outfitsGrid = document.getElementById("outfitsGrid");
 const selectBtn = document.getElementById("selectBtn");
 const downloadAllBtn = document.getElementById("downloadAllBtn");
+const closeOutfitRender = document.getElementById("closeOutfitRender");
+
+// Render Outputs
+const currentRenderOutput = document.getElementById("currentRenderOutput");
+const currentRenderImg = document.getElementById("currentRenderImg");
+const currentRenderDownloadBtn = document.getElementById("currentRenderDownloadBtn");
+
+const outfitRenderOutput = document.getElementById("outfitRenderOutput");
+const outfitRenderImg = document.getElementById("outfitRenderImg");
+const outfitRenderDownloadBtn = document.getElementById("outfitRenderDownloadBtn");
 
 const FALLBACK_THUMB =
   "https://tr.rbxcdn.com/30DAY-AvatarHeadshot-Png/420/420/AvatarHeadshot/Png/noFilter";
@@ -35,44 +45,31 @@ const FALLBACK_THUMB =
 let outfitDownloadBusy = false;
 
 // ======================
-// Modal / Preview Logic
+// Inline Render Logic
 // ======================
-function showpreview(blob, filename) {
+function showCurrentRender(blob, filename) {
   const url = URL.createObjectURL(blob);
+  currentRenderImg.src = url;
+  currentRenderOutput.style.display = "block";
 
-  const modal = document.createElement("div");
-  modal.style.cssText = `
-    position: fixed; inset: 0; z-index: 9999;
-    background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
-    display: flex; align-items: center; justify-content: center;
-    flex-direction: column; opacity: 0; transition: opacity 0.3s ease;
-  `;
-
-  modal.innerHTML = `
-    <div style="position: relative; max-width: 90vw; max-height: 80vh;">
-      <img src="${url}" style="max-width: 100%; max-height: 80vh; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
-      <button id="closePreview" style="position: absolute; top: -20px; right: -20px; background: #333; color: white; border: 2px solid rgba(255,255,255,0.2); width: 40px; height: 40px; border-radius: 50%; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;">×</button>
-    </div>
-    <div style="display: flex; gap: 16px; margin-top: 24px;">
-      <button id="downloadPreview" class="primary" style="margin-top:0; min-width: 160px;">Download PNG</button>
-      <button id="closePreviewBtn" class="secondary" style="margin-top:0;">Close</button>
-    </div>
-  `;
-
-  document.body.appendChild(modal);
-
-  // Animate in
-  requestAnimationFrame(() => modal.style.opacity = "1");
-
-  const close = () => {
-    modal.style.opacity = "0";
-    setTimeout(() => {
-      modal.remove();
-      URL.revokeObjectURL(url);
-    }, 300);
+  // Setup download button
+  currentRenderDownloadBtn.onclick = () => {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   };
+}
 
-  const download = () => {
+function showOutfitRender(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  outfitRenderImg.src = url;
+  outfitRenderOutput.style.display = "block";
+
+  // Setup download button
+  outfitRenderDownloadBtn.onclick = () => {
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
@@ -81,13 +78,14 @@ function showpreview(blob, filename) {
     a.remove();
   };
 
-  modal.querySelector("#closePreview").onclick = close;
-  modal.querySelector("#closePreviewBtn").onclick = close;
-  modal.querySelector("#downloadPreview").onclick = download;
-  modal.onclick = (e) => {
-    if (e.target === modal) close();
-  };
+  // Scroll to view
+  outfitRenderOutput.scrollIntoView({ behavior: "smooth", block: "center" });
 }
+
+closeOutfitRender.onclick = () => {
+  outfitRenderOutput.style.display = "none";
+  outfitRenderImg.src = "";
+};
 
 // ======================
 // Renderer Logic
@@ -408,7 +406,7 @@ async function downloadCurrentAvatarRender(username) {
   const fileName = `Render_${username}_${userId}.png`;
 
   // Show Preview
-  showpreview(pngBlob, fileName);
+  showCurrentRender(pngBlob, fileName);
 
   setStatus("ok", "Success", `Render complete!`);
 }
@@ -578,7 +576,7 @@ async function downloadOutfit(outfit) {
   const fileName = `Render_Outfit_${outfit.id}.png`;
 
   // Show Preview
-  showpreview(pngBlob, fileName);
+  showOutfitRender(pngBlob, fileName);
 
   setStatus("ok", "Success", `Render complete!`);
 }

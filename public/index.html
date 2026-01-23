@@ -10,6 +10,15 @@
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;900&display=swap" rel="stylesheet">
   <title>Avatar Renderer | Viswa</title>
 
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
   <style>
     body {
       font-family: 'Poppins', sans-serif;
@@ -461,6 +470,15 @@
           <span class="badge warn">Ready</span>
           Enter a username and click "Get Render".
         </div>
+
+        <!-- Render Output Area -->
+        <div id="currentRenderOutput"
+          style="margin-top:20px; text-align:center; display:none; animation: fadeIn 0.5s ease;">
+          <img id="currentRenderImg"
+            style="max-width:100%; border-radius:12px; margin-bottom:14px; border: 1px solid rgba(255,255,255,0.1);">
+          <br>
+          <button id="currentRenderDownloadBtn" class="primary">Download PNG</button>
+        </div>
       </div>
 
       <!-- OUTFITS -->
@@ -482,6 +500,19 @@
         <div class="status" id="statusOutfits">
           <span class="badge warn">Ready</span>
           Enter a username and click "Load Outfits".
+        </div>
+
+        <!-- Render Output Area -->
+        <div id="outfitRenderOutput"
+          style="margin-top:20px; margin-bottom:20px; text-align:center; display:none; animation: fadeIn 0.5s ease; background:rgba(0,0,0,0.2); padding:20px; border-radius:16px;">
+          <div style="display:flex; justify-content:flex-end; margin-bottom:10px;">
+            <button id="closeOutfitRender" class="secondary" style="padding:6px 12px; font-size:12px; width:auto;">Close
+              Preview</button>
+          </div>
+          <img id="outfitRenderImg"
+            style="max-width:100%; border-radius:12px; margin-bottom:14px; border: 1px solid rgba(255,255,255,0.1);">
+          <br>
+          <button id="outfitRenderDownloadBtn" class="primary">Download PNG</button>
         </div>
 
         <div class="outfits" id="outfitsGrid"></div>
