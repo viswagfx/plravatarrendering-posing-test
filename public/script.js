@@ -119,7 +119,10 @@ async function renderAvatarFromZip(zipBlob) {
   const textureUrls = {};
   for (const [name, file] of Object.entries(textures)) {
     const blob = await file.async("blob");
-    textureUrls[name] = URL.createObjectURL(blob);
+    // Store multiple keys for robustness (with/without path, lower/original)
+    const baseName = name.split('/').pop().toLowerCase();
+    textureUrls[baseName] = URL.createObjectURL(blob);
+    textureUrls[name] = textureUrls[baseName]; // Fallback
   }
 
   const mtlString = await mtlFile.async("string");
@@ -129,13 +132,19 @@ async function renderAvatarFromZip(zipBlob) {
   // The backend replaces hash with 'texture_N.png'. 
   // We need to map those filenames to our blob URLs.
   let patchedMtl = mtlString;
-  for (const [name, url] of Object.entries(textureUrls)) {
-    // Regex to match exact filename usage in map_Kd
-    // e.g. map_Kd texture_1.png
-    const reg = new RegExp(`(map_Kd\\s+)(.*${name})`, 'gi');
-    // Actually simplicity: global replace of filename
-    patchedMtl = patchedMtl.replaceAll(name, url);
-  }
+
+  // Robust replacement: find any "map_Kd ..." lines and replace the filename
+  patchedMtl = patchedMtl.replace(/map_Kd\s+(.+)$/gm, (match, filename) => {
+    const cleanName = filename.trim().toLowerCase();
+    const cleanBase = cleanName.split('/').pop(); // Handle "textures/texture_1.png"
+
+    if (textureUrls[cleanBase]) {
+      return `map_Kd ${textureUrls[cleanBase]}`;
+    }
+    return match; // Keep original if not found (will fail to load but safe)
+  });
+
+  console.log("Patched MTL:", patchedMtl); // Debug
 
   // 4. Setup Three.js Scene
   const scene = new THREE.Scene();
