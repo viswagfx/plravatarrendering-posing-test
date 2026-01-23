@@ -177,13 +177,13 @@ async function renderAvatarFromZip(zipBlob) {
   // Rotate 180 deg around Y
   object.rotation.y = Math.PI;
 
-  // Camera
+  // Camera - Clip start (near) adjusted to 0.01 for better close-up handling
   const maxDim = Math.max(size.x, size.y, size.z);
   const fov = 45;
-  const camera = new THREE.PerspectiveCamera(fov, 1, 0.1, 1000);
+  const camera = new THREE.PerspectiveCamera(fov, 1, 0.01, 1000);
   const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov * Math.PI / 360));
 
-  camera.position.set(0, size.y * 0.1, cameraZ * 3.5); // Moved back further
+  camera.position.set(0, size.y * 0.1, cameraZ * 2.0); // Reverted back to 2.0
   camera.lookAt(0, 0, 0);
 
   // 7. Render
@@ -192,7 +192,8 @@ async function renderAvatarFromZip(zipBlob) {
   const renderer = new THREE.WebGLRenderer({
     alpha: true,
     antialias: true,
-    preserveDrawingBuffer: true
+    preserveDrawingBuffer: true,
+    logarithmicDepthBuffer: true // Fix z-fighting/transparency overlap
   });
   renderer.setSize(width, height);
   renderer.setPixelRatio(2); // High DPI
@@ -254,7 +255,7 @@ async function renderAvatarFromZip(zipBlob) {
 
     const maxDim2 = Math.max(size2.x, size2.y, size2.z);
     const cameraZ2 = Math.abs(maxDim2 / 2 / Math.tan(fov * Math.PI / 360));
-    camera.position.set(0, size2.y * 0.1, cameraZ2 * 3.5);
+    camera.position.set(0, size2.y * 0.1, cameraZ2 * 2.0);
     camera.lookAt(0, 0, 0);
 
     scene.add(object2);
