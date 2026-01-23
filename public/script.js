@@ -214,7 +214,9 @@ async function buildSceneFromZip(zipBlob) {
     const fov = 45;
     const camera = new THREE.PerspectiveCamera(fov, 1, 0.1, 1000);
     const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov * Math.PI / 360));
-    camera.position.set(0, size.y * 0.1, cameraZ * 2.0);
+
+    // Closer zoom (was 2.0)
+    camera.position.set(0, size.y * 0.1, cameraZ * 1.4);
     camera.lookAt(0, 0, 0);
 
     // Lights (Base Setup)
@@ -270,6 +272,10 @@ async function createAvatarViewer(zipBlob, container, controls) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
+
+  // FIX: aspect ratio immediately
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
 
   container.appendChild(renderer.domElement);
 
