@@ -163,7 +163,9 @@ async function renderAvatarFromZip(zipBlob) {
     mat.alphaTest = 0.5;
     mat.transparent = false; // Use alphaTest instead for better depth consistency
     mat.side = THREE.DoubleSide;
-    // If map exists, ensure color space? standard loader does this if renderer set.
+
+    // Ensure texture colors are interpreted correctly
+    if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
   }
 
   const objLoader = new OBJLoader();
@@ -206,7 +208,9 @@ async function renderAvatarFromZip(zipBlob) {
   });
   renderer.setSize(width, height);
   renderer.setPixelRatio(2); // High DPI
-  renderer.outputColorSpace = THREE.SRGBColorSpace; // ✅ Correct colors (not washed out)
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
 
   // Wait a tick for textures? Usually Three.js handles it, but texture load is async.
   // OBJLoader + MTLLoader sync parsing might not wait for image load.
