@@ -138,17 +138,21 @@ async function renderAvatarFromZip(zipBlob) {
   // 4. Setup Three.js Scene
   const scene = new THREE.Scene();
 
-  // Lights - Balanced Studio Lighting
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+  // Lights - Improved Studio Lighting
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
   scene.add(ambientLight);
 
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  dirLight.position.set(5, 10, 7);
-  scene.add(dirLight);
+  const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+  keyLight.position.set(5, 10, 7);
+  scene.add(keyLight);
 
-  const backLight = new THREE.DirectionalLight(0xffffff, 0.5);
-  backLight.position.set(-5, 5, -5);
-  scene.add(backLight);
+  const fillLight = new THREE.DirectionalLight(0xffffff, 0.6);
+  fillLight.position.set(-5, 5, 5);
+  scene.add(fillLight);
+
+  const rimLight = new THREE.DirectionalLight(0xffffff, 0.4);
+  rimLight.position.set(0, 5, -10);
+  scene.add(rimLight);
 
   // 5. Load Material & Object with LoadingManager
   const manager = new THREE.LoadingManager();
