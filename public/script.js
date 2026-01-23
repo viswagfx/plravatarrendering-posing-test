@@ -163,10 +163,11 @@ async function renderAvatarFromZip(zipBlob) {
       const mat = materials.materials[materialName];
 
       // Fix transparency handling
-      mat.transparent = true;  // Enable transparency
-      mat.alphaTest = 0.1;     // Lower threshold for better alpha coverage
+      mat.transparent = false;  // Disables alpha blending (fixes semi-transparent look)
+      mat.alphaTest = 0.5;     // Hard cutoff for transparency
       mat.depthWrite = true;   // Write to depth buffer
       mat.side = THREE.DoubleSide;
+      mat.needsUpdate = true;
 
       // Ensure texture colors are interpreted correctly
       if (mat.map) {
