@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // ======================
 // Missing Variable Declarations
@@ -279,6 +280,13 @@ async function createAvatarViewer(zipBlob, container, controls) {
 
   container.appendChild(renderer.domElement);
 
+  // Orbit Controls
+  const orbit = new OrbitControls(camera, renderer.domElement);
+  orbit.enableDamping = true;
+  orbit.dampingFactor = 0.05;
+  orbit.minDistance = 2;
+  orbit.maxDistance = 20;
+
   // Resize handler
   const onResize = () => {
     const w = container.clientWidth;
@@ -293,6 +301,8 @@ async function createAvatarViewer(zipBlob, container, controls) {
   let running = true;
   const animate = () => {
     if (!running) return;
+
+    orbit.update(); // Update controls
 
     // Update lights from sliders
     if (controls) {
@@ -311,6 +321,7 @@ async function createAvatarViewer(zipBlob, container, controls) {
     dispose: () => {
       running = false;
       window.removeEventListener("resize", onResize);
+      orbit.dispose();
       renderer.dispose();
       container.innerHTML = "";
       for (const url of Object.values(textureUrls)) URL.revokeObjectURL(url);
