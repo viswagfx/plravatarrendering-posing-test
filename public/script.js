@@ -28,6 +28,36 @@ const PLAYER_TO_BODYPART = {
 
 const R15_BODY_PARTS = Object.values(PLAYER_TO_BODYPART);
 
+// Limb hierarchy: defines which parts are children of which
+// Children inherit rotation from their parent
+const LIMB_HIERARCHY = {
+  'UpperTorso': { parent: 'LowerTorso', children: ['Head'] },
+  'Head': { parent: 'UpperTorso', children: [] },
+
+  // Right arm chain
+  'RightUpperArm': { parent: 'UpperTorso', children: ['RightLowerArm'] },
+  'RightLowerArm': { parent: 'RightUpperArm', children: ['RightHand'] },
+  'RightHand': { parent: 'RightLowerArm', children: [] },
+
+  // Left arm chain
+  'LeftUpperArm': { parent: 'UpperTorso', children: ['LeftLowerArm'] },
+  'LeftLowerArm': { parent: 'LeftUpperArm', children: ['LeftHand'] },
+  'LeftHand': { parent: 'LeftLowerArm', children: [] },
+
+  // Right leg chain
+  'RightUpperLeg': { parent: 'LowerTorso', children: ['RightLowerLeg'] },
+  'RightLowerLeg': { parent: 'RightUpperLeg', children: ['RightFoot'] },
+  'RightFoot': { parent: 'RightLowerLeg', children: [] },
+
+  // Left leg chain
+  'LeftUpperLeg': { parent: 'LowerTorso', children: ['LeftLowerLeg'] },
+  'LeftLowerLeg': { parent: 'LeftUpperLeg', children: ['LeftFoot'] },
+  'LeftFoot': { parent: 'LeftLowerLeg', children: [] },
+
+  // Root parts
+  'LowerTorso': { parent: null, children: ['UpperTorso', 'LeftUpperLeg', 'RightUpperLeg'] }
+};
+
 // Preset poses (rotations in degrees for each body part)
 const POSES = {
   default: {
@@ -38,8 +68,7 @@ const POSES = {
     name: 'Wave',
     rotations: {
       'RightUpperArm': { x: 0, y: 0, z: -150 },
-      'RightLowerArm': { x: 0, y: 45, z: -30 },
-      'RightHand': { x: 20, y: 0, z: 0 },
+      'RightLowerArm': { x: 0, y: 30, z: 0 },
       'Head': { x: 0, y: 15, z: 5 }
     }
   },
@@ -59,8 +88,8 @@ const POSES = {
     rotations: {
       'LeftUpperArm': { x: 0, y: 15, z: 20 },
       'RightUpperArm': { x: 0, y: -15, z: -20 },
-      'LeftLowerArm': { x: 0, y: 0, z: 15 },
-      'RightLowerArm': { x: 0, y: 0, z: -15 },
+      'LeftLowerArm': { x: -30, y: 0, z: 0 },
+      'RightLowerArm': { x: -30, y: 0, z: 0 },
       'Head': { x: 5, y: 10, z: 0 },
       'UpperTorso': { x: 3, y: 5, z: 0 }
     }
@@ -434,6 +463,99 @@ async function buildSceneFromZip(zipBlob) {
     });
 
     console.log(`[Posing] Found ${bodyParts.size} body parts:`, [...bodyParts.keys()]);
+
+    // Create pivot groups for hierarchical limb rotation
+    const pivotGroups = new Map();
+
+    if (bodyParts.size > 0) {
+      // First pass: create pivot groups for each body part
+      for (const [partName, mesh] of bodyParts) {
+        // Get the bounding box of the mesh to find its center
+        const bbox = new THREE.Box3().setFromObject(mesh);
+        const meshCenter = bbox.getCenter(new THREE.Vector3());
+
+        // For limbs, we want to pivot from the "top" (connection point to parent)
+        // Determine pivot point based on body part type
+        let pivotPoint = meshCenter.clone();
+
+        // Adjust pivot point to be at the top of the mesh for limbs
+        if (partName.includes('Upper') || partName.includes('Lower') ||
+          partName.includes('Hand') || partName.includes('Foot')) {
+          // For arms - pivot at shoulder/elbow/wrist
+          // For legs - pivot at hip/knee/ankle
+          const size = bbox.getSize(new THREE.Vector3());
+
+          if (partName.includes('Arm') || partName.includes('Hand')) {
+            // Arms pivot from the side (near torso)
+            if (partName.includes('Right')) {
+              pivotPoint.x = bbox.min.x; // Pivot from left side (towards torso)
+            } else {
+              pivotPoint.x = bbox.max.x; // Pivot from right side (towards torso)
+            }
+          } else if (partName.includes('Leg') || partName.includes('Foot')) {
+            // Legs pivot from top
+            pivotPoint.y = bbox.max.y;
+          }
+        }
+
+        // Create pivot group at the pivot point
+        const pivot = new THREE.Group();
+        pivot.name = `${partName}_pivot`;
+        pivot.position.copy(pivotPoint);
+
+        // Store the pivot and the offset needed to position the mesh
+        pivotGroups.set(partName, {
+          pivot: pivot,
+          mesh: mesh,
+          originalParent: mesh.parent,
+          offset: meshCenter.clone().sub(pivotPoint)
+        });
+      }
+
+      // Second pass: set up parent-child relationships
+      for (const [partName, data] of pivotGroups) {
+        const hierarchy = LIMB_HIERARCHY[partName];
+        if (!hierarchy) continue;
+
+        const { pivot, mesh, originalParent, offset } = data;
+
+        // Move mesh to be relative to pivot
+        const worldPos = new THREE.Vector3();
+        mesh.getWorldPosition(worldPos);
+
+        // Get parent's pivot if exists
+        const parentPartName = hierarchy.parent;
+        const parentData = parentPartName ? pivotGroups.get(parentPartName) : null;
+
+        if (parentData) {
+          // Add this pivot to parent's pivot
+          parentData.pivot.add(pivot);
+          // Adjust pivot position relative to parent
+          const parentWorldPos = new THREE.Vector3();
+          parentData.pivot.getWorldPosition(parentWorldPos);
+          pivot.position.sub(parentWorldPos);
+        } else {
+          // Root level - add to original parent
+          if (originalParent) {
+            originalParent.add(pivot);
+          }
+        }
+
+        // Re-parent mesh to pivot
+        pivot.add(mesh);
+        // Adjust mesh position relative to pivot
+        mesh.position.set(-offset.x, -offset.y, -offset.z);
+      }
+
+      // Update bodyParts to point to pivot groups for rotation
+      for (const [partName, data] of pivotGroups) {
+        bodyParts.set(partName, data.pivot);
+        // Reset stored rotations for pivots
+        originalRotations.set(partName, { x: 0, y: 0, z: 0 });
+      }
+
+      console.log(`[Posing] Created ${pivotGroups.size} pivot groups for hierarchical posing`);
+    }
 
     // Center Object
     const box = new THREE.Box3().setFromObject(object);
