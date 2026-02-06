@@ -10,20 +10,20 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 // This mapping converts those to logical body part names
 const PLAYER_TO_BODYPART = {
   'Player1': 'Head',
-  'Player2': 'UpperTorso',
+  'Player2': 'RightUpperLeg',
   'Player3': 'LowerTorso',
-  'Player4': 'LeftUpperArm',
-  'Player5': 'LeftLowerArm',
-  'Player6': 'LeftHand',
-  'Player7': 'RightUpperArm',
-  'Player8': 'RightLowerArm',
-  'Player9': 'RightHand',
-  'Player10': 'LeftUpperLeg',
-  'Player11': 'LeftLowerLeg',
-  'Player12': 'LeftFoot',
-  'Player13': 'RightUpperLeg',
-  'Player14': 'RightLowerLeg',
-  'Player15': 'RightFoot'
+  'Player4': 'RightLowerLeg',
+  'Player5': 'RightFoot',
+  'Player6': 'LeftUpperLeg',
+  'Player7': 'UpperTorso',
+  'Player8': 'LeftLowerLeg',
+  'Player9': 'LeftFoot',
+  'Player10': 'RightUpperArm',
+  'Player11': 'LeftUpperArm',
+  'Player12': 'RightLowerArm',
+  'Player13': 'LeftLowerArm',
+  'Player14': 'RightHand',
+  'Player15': 'LeftHand'
 };
 
 const R15_BODY_PARTS = Object.values(PLAYER_TO_BODYPART);
