@@ -4,6 +4,72 @@ import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // ======================
+// R15 Body Part Configuration
+// ======================
+const R15_BODY_PARTS = [
+  'Head', 'UpperTorso', 'LowerTorso',
+  'LeftUpperArm', 'LeftLowerArm', 'LeftHand',
+  'RightUpperArm', 'RightLowerArm', 'RightHand',
+  'LeftUpperLeg', 'LeftLowerLeg', 'LeftFoot',
+  'RightUpperLeg', 'RightLowerLeg', 'RightFoot'
+];
+
+// Preset poses (rotations in degrees for each body part)
+const POSES = {
+  default: {
+    name: 'Default',
+    rotations: {} // No rotations - T-pose
+  },
+  wave: {
+    name: 'Wave',
+    rotations: {
+      'RightUpperArm': { x: 0, y: 0, z: -150 },
+      'RightLowerArm': { x: 0, y: 45, z: -30 },
+      'RightHand': { x: 20, y: 0, z: 0 },
+      'Head': { x: 0, y: 15, z: 5 }
+    }
+  },
+  hero: {
+    name: 'Hero',
+    rotations: {
+      'LeftUpperArm': { x: 0, y: 0, z: 25 },
+      'RightUpperArm': { x: 0, y: 0, z: -25 },
+      'LeftUpperLeg': { x: 0, y: 0, z: -8 },
+      'RightUpperLeg': { x: 0, y: 0, z: 8 },
+      'UpperTorso': { x: 5, y: 0, z: 0 },
+      'Head': { x: -5, y: 0, z: 0 }
+    }
+  },
+  relaxed: {
+    name: 'Relaxed',
+    rotations: {
+      'LeftUpperArm': { x: 0, y: 15, z: 20 },
+      'RightUpperArm': { x: 0, y: -15, z: -20 },
+      'LeftLowerArm': { x: 0, y: 0, z: 15 },
+      'RightLowerArm': { x: 0, y: 0, z: -15 },
+      'Head': { x: 5, y: 10, z: 0 },
+      'UpperTorso': { x: 3, y: 5, z: 0 }
+    }
+  },
+  sitting: {
+    name: 'Sitting',
+    rotations: {
+      'LeftUpperLeg': { x: -90, y: 0, z: 5 },
+      'RightUpperLeg': { x: -90, y: 0, z: -5 },
+      'LeftLowerLeg': { x: 90, y: 0, z: 0 },
+      'RightLowerLeg': { x: 90, y: 0, z: 0 },
+      'LeftUpperArm': { x: 0, y: 0, z: 30 },
+      'RightUpperArm': { x: 0, y: 0, z: -30 },
+      'LeftLowerArm': { x: -45, y: 0, z: 0 },
+      'RightLowerArm': { x: -45, y: 0, z: 0 }
+    }
+  }
+};
+
+// Current pose state
+let currentPose = 'default';
+
+// ======================
 // Missing Variable Declarations
 // ======================
 let isSelectionMode = false;
@@ -137,6 +203,30 @@ function showCurrentRender(zipBlob, filename) {
       const url = viewer.capture();
       openSnapshotModal(url, filename);
     };
+
+    // Setup pose buttons
+    const poseContainer = document.getElementById('currPoseButtons');
+    if (poseContainer) {
+      poseContainer.innerHTML = '';
+
+      if (viewer.hasBodyParts()) {
+        const poses = viewer.getAvailablePoses();
+        poses.forEach(poseKey => {
+          const btn = document.createElement('button');
+          btn.className = 'pose-btn' + (poseKey === 'default' ? ' active' : '');
+          btn.textContent = POSES[poseKey]?.name || poseKey;
+          btn.onclick = () => {
+            viewer.setPose(poseKey);
+            // Update active state
+            poseContainer.querySelectorAll('.pose-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+          };
+          poseContainer.appendChild(btn);
+        });
+      } else {
+        poseContainer.innerHTML = '<span class="pose-unavailable">Poses unavailable for this avatar</span>';
+      }
+    }
   });
 }
 
@@ -164,6 +254,30 @@ function showOutfitRender(zipBlob, filename) {
       openSnapshotModal(url, filename);
     };
 
+    // Setup pose buttons
+    const poseContainer = document.getElementById('outfitPoseButtons');
+    if (poseContainer) {
+      poseContainer.innerHTML = '';
+
+      if (viewer.hasBodyParts()) {
+        const poses = viewer.getAvailablePoses();
+        poses.forEach(poseKey => {
+          const btn = document.createElement('button');
+          btn.className = 'pose-btn' + (poseKey === 'default' ? ' active' : '');
+          btn.textContent = POSES[poseKey]?.name || poseKey;
+          btn.onclick = () => {
+            viewer.setPose(poseKey);
+            // Update active state
+            poseContainer.querySelectorAll('.pose-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+          };
+          poseContainer.appendChild(btn);
+        });
+      } else {
+        poseContainer.innerHTML = '<span class="pose-unavailable">Poses unavailable for this outfit</span>';
+      }
+    }
+
     // Scroll to view
     outfitRenderOutput.scrollIntoView({ behavior: "smooth", block: "center" });
   });
@@ -180,6 +294,32 @@ closeOutfitRender.onclick = () => {
 // ======================
 // Core 3D Logic
 // ======================
+
+// Helper: Apply pose to body parts
+function applyPose(bodyParts, poseKey, originalRotations) {
+  const pose = POSES[poseKey];
+  if (!pose) return;
+
+  // Reset all parts to original rotation first
+  for (const [partName, mesh] of bodyParts) {
+    const original = originalRotations.get(partName);
+    if (original) {
+      mesh.rotation.set(original.x, original.y, original.z);
+    }
+  }
+
+  // Apply pose rotations
+  for (const [partName, rotation] of Object.entries(pose.rotations)) {
+    const mesh = bodyParts.get(partName);
+    if (mesh) {
+      const original = originalRotations.get(partName) || { x: 0, y: 0, z: 0 };
+      // Convert degrees to radians and add to original rotation
+      mesh.rotation.x = original.x + THREE.MathUtils.degToRad(rotation.x || 0);
+      mesh.rotation.y = original.y + THREE.MathUtils.degToRad(rotation.y || 0);
+      mesh.rotation.z = original.z + THREE.MathUtils.degToRad(rotation.z || 0);
+    }
+  }
+}
 
 // Helper: Build Scene (Common for both Interactive & Batch)
 async function buildSceneFromZip(zipBlob) {
@@ -243,6 +383,31 @@ async function buildSceneFromZip(zipBlob) {
     objLoader.setMaterials(materials);
     const object = objLoader.parse(objString);
 
+    // Parse body parts from OBJ groups
+    const bodyParts = new Map();
+    const originalRotations = new Map();
+
+    object.traverse((child) => {
+      if (child.isMesh || child.isGroup) {
+        const name = child.name || '';
+        // Check for R15 body part names (with or without _geo suffix)
+        for (const partName of R15_BODY_PARTS) {
+          if (name.includes(partName) || name.toLowerCase().includes(partName.toLowerCase())) {
+            bodyParts.set(partName, child);
+            // Store original rotation
+            originalRotations.set(partName, {
+              x: child.rotation.x,
+              y: child.rotation.y,
+              z: child.rotation.z
+            });
+            break;
+          }
+        }
+      }
+    });
+
+    console.log(`[Posing] Found ${bodyParts.size} body parts:`, [...bodyParts.keys()]);
+
     // Center Object
     const box = new THREE.Box3().setFromObject(object);
     const center = box.getCenter(new THREE.Vector3());
@@ -280,7 +445,9 @@ async function buildSceneFromZip(zipBlob) {
       resolve({
         scene, camera,
         lights: { ambient, key, fill, rim },
-        textureUrls
+        textureUrls,
+        bodyParts,
+        originalRotations
       });
     };
 
@@ -289,7 +456,9 @@ async function buildSceneFromZip(zipBlob) {
       resolve({
         scene, camera,
         lights: { ambient, key, fill, rim },
-        textureUrls
+        textureUrls,
+        bodyParts,
+        originalRotations
       });
     }
   }); // End Promise
@@ -300,7 +469,7 @@ async function createAvatarViewer(zipBlob, container, controls) {
   // Clear container
   container.innerHTML = "";
 
-  const { scene, camera, lights, textureUrls } = await buildSceneFromZip(zipBlob);
+  const { scene, camera, lights, textureUrls, bodyParts, originalRotations } = await buildSceneFromZip(zipBlob);
 
   const renderer = new THREE.WebGLRenderer({
     alpha: true,
@@ -374,7 +543,18 @@ async function createAvatarViewer(zipBlob, container, controls) {
       // Force render to ensure latest state
       renderer.render(scene, camera);
       return renderer.domElement.toDataURL("image/png");
-    }
+    },
+    setPose: (poseKey) => {
+      if (bodyParts.size > 0) {
+        applyPose(bodyParts, poseKey, originalRotations);
+        currentPose = poseKey;
+        console.log(`[Posing] Applied pose: ${poseKey}`);
+      } else {
+        console.warn('[Posing] No body parts found - cannot apply pose');
+      }
+    },
+    getAvailablePoses: () => Object.keys(POSES),
+    hasBodyParts: () => bodyParts.size > 0
   };
 }
 

@@ -498,6 +498,51 @@
       border-radius: 2px;
       outline: none;
     }
+
+    /* Pose Controls */
+    .pose-controls {
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 12px;
+      padding: 15px;
+      margin-bottom: 15px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .pose-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .pose-btn {
+      padding: 8px 14px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .pose-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      transform: translateY(-1px);
+    }
+
+    .pose-btn.active {
+      background: #6c5ce7;
+      border-color: #6c5ce7;
+      color: white;
+      box-shadow: 0 4px 15px rgba(108, 92, 231, 0.3);
+    }
+
+    .pose-unavailable {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+      font-style: italic;
+    }
   </style>
 </head>
 
@@ -565,6 +610,14 @@
             </div>
           </div>
 
+          <!-- Pose Controls (Current) -->
+          <div class="pose-controls">
+            <div class="control-header">Avatar Pose</div>
+            <div id="currPoseButtons" class="pose-buttons">
+              <span class="pose-unavailable">Loading poses...</span>
+            </div>
+          </div>
+
           <button id="currentRenderDownloadBtn" class="primary" style="margin-top: 15px;">Download PNG</button>
         </div>
       </div>
@@ -621,6 +674,14 @@
                 <label>Rim</label>
                 <input type="range" id="outfitLightRim" min="0" max="3" step="0.1" value="0.4">
               </div>
+            </div>
+          </div>
+
+          <!-- Pose Controls (Outfit) -->
+          <div class="pose-controls">
+            <div class="control-header">Avatar Pose</div>
+            <div id="outfitPoseButtons" class="pose-buttons">
+              <span class="pose-unavailable">Loading poses...</span>
             </div>
           </div>
 
