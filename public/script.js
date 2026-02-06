@@ -6,13 +6,27 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 // ======================
 // R15 Body Part Configuration
 // ======================
-const R15_BODY_PARTS = [
-  'Head', 'UpperTorso', 'LowerTorso',
-  'LeftUpperArm', 'LeftLowerArm', 'LeftHand',
-  'RightUpperArm', 'RightLowerArm', 'RightHand',
-  'LeftUpperLeg', 'LeftLowerLeg', 'LeftFoot',
-  'RightUpperLeg', 'RightLowerLeg', 'RightFoot'
-];
+// Roblox API exports body parts as Player1-Player15 groups
+// This mapping converts those to logical body part names
+const PLAYER_TO_BODYPART = {
+  'Player1': 'Head',
+  'Player2': 'UpperTorso',
+  'Player3': 'LowerTorso',
+  'Player4': 'LeftUpperArm',
+  'Player5': 'LeftLowerArm',
+  'Player6': 'LeftHand',
+  'Player7': 'RightUpperArm',
+  'Player8': 'RightLowerArm',
+  'Player9': 'RightHand',
+  'Player10': 'LeftUpperLeg',
+  'Player11': 'LeftLowerLeg',
+  'Player12': 'LeftFoot',
+  'Player13': 'RightUpperLeg',
+  'Player14': 'RightLowerLeg',
+  'Player15': 'RightFoot'
+};
+
+const R15_BODY_PARTS = Object.values(PLAYER_TO_BODYPART);
 
 // Preset poses (rotations in degrees for each body part)
 const POSES = {
@@ -390,17 +404,30 @@ async function buildSceneFromZip(zipBlob) {
     object.traverse((child) => {
       if (child.isMesh || child.isGroup) {
         const name = child.name || '';
-        // Check for R15 body part names (with or without _geo suffix)
-        for (const partName of R15_BODY_PARTS) {
-          if (name.includes(partName) || name.toLowerCase().includes(partName.toLowerCase())) {
-            bodyParts.set(partName, child);
-            // Store original rotation
-            originalRotations.set(partName, {
-              x: child.rotation.x,
-              y: child.rotation.y,
-              z: child.rotation.z
-            });
-            break;
+
+        // Check for Player1-Player15 format (Roblox API export)
+        if (PLAYER_TO_BODYPART[name]) {
+          const partName = PLAYER_TO_BODYPART[name];
+          bodyParts.set(partName, child);
+          // Store original rotation
+          originalRotations.set(partName, {
+            x: child.rotation.x,
+            y: child.rotation.y,
+            z: child.rotation.z
+          });
+        }
+        // Also check for R15 body part names (with or without _geo suffix) as fallback
+        else {
+          for (const partName of R15_BODY_PARTS) {
+            if (name.includes(partName) || name.toLowerCase().includes(partName.toLowerCase())) {
+              bodyParts.set(partName, child);
+              originalRotations.set(partName, {
+                x: child.rotation.x,
+                y: child.rotation.y,
+                z: child.rotation.z
+              });
+              break;
+            }
           }
         }
       }
